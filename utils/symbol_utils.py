@@ -13,17 +13,17 @@ def convert_symbol_format(symbol: str, data_source: str, from_format: str = 'fut
     
     Args:
         symbol: 股票代码（Futu格式，如：HK.00700, SZ.000001, US.AAPL）
-        data_source: 目标数据格式类型 比如：'futu', 'yfinance'
-        from_format: 输入股票代码的格式，默认是futu格式
+        data_source: 目标数据格式类型 比如：'futu', 'futu_RT', 'yfinance'
+        from_format: 输入股票代码的格式 比如：'futu', 'futu_RT', 'yfinance'，默认是futu格式
         
     Returns:
         转换后的股票代码
     """
-    if data_source not in settings.data.available_data_sources:
+    if data_source not in settings.data.available_data_sources['available_data_sources']:
         raise ValueError(f"不支持的数据源: {data_source}")
 
-    if data_source == 'futu':
-        if from_format == 'futu':
+    if data_source == 'futu' or data_source == 'futu_RT':
+        if from_format == 'futu' or from_format == 'futu_RT':
             # Futu数据源直接使用原格式
             return symbol
         elif from_format == 'yfinance':
@@ -49,6 +49,53 @@ def convert_symbol_format(symbol: str, data_source: str, from_format: str = 'fut
             # yfinance数据源直接使用原格式
             return symbol
 
+def convert_symbols_format(symbols: list, data_source: str, from_format: str = 'futu') -> list:
+    """
+    将股票代码从Futu格式转换为指定数据源格式
+    
+    Args:
+        symbols: 股票代码列表（Futu格式，如：['HK.00700', 'SZ.000001', 'US.AAPL']）
+        data_source: 目标数据格式类型 比如：'futu', 'futu_RT', 'yfinance'
+        from_format: 输入股票代码的格式 比如：'futu', 'futu_RT', 'yfinance'，默认是futu格式
+        
+    Returns:
+        转换后的股票代码
+    """
+    if data_source not in settings.data.available_data_sources['available_data_sources']:
+        raise ValueError(f"不支持的数据源: {data_source}")
+
+    if data_source == 'futu' or data_source == 'futu_RT':
+        if from_format == 'futu' or from_format == 'futu_RT':
+            # Futu数据源直接使用原格式
+            return symbols
+        elif from_format == 'yfinance':
+            # yfinance数据源需要转换格式
+            futu_symbols = []
+            for symbol in symbols:
+                success, futu_symbol = _yfinance_to_Futu_format(symbol)
+                if success:
+                    futu_symbols.append(futu_symbol)
+                else:
+                    print(f"股票代码 {symbol} 转换为 Futu 格式失败,返回原格式")
+                    return symbols
+            return futu_symbols
+        else:
+            raise ValueError(f"不支持的输入格式: {from_format}")
+    elif data_source == 'yfinance':
+        if from_format == 'futu':
+            # Futu数据源需要转换格式
+            yfinance_symbols = []
+            for symbol in symbols:
+                success, yfinance_symbol = _Futu_to_yfinance_format(symbol)
+                if success:
+                    yfinance_symbols.append(yfinance_symbol)
+                else:
+                    print(f"股票代码 {symbol} 转换为 yfinance 格式失败,返回原格式")
+                    return symbols
+            return yfinance_symbols
+        elif from_format == 'yfinance':
+            # yfinance数据源直接使用原格式
+            return symbols
 
 def _Futu_to_yfinance_format(symbol: str) -> str:
     """
@@ -165,13 +212,32 @@ def validate_symbol_format(symbol: str, data_source: str) -> bool:
     Returns:
         bool: 格式是否有效
     """
-    if data_source not in settings.data.available_data_sources:
+    if data_source not in settings.data.available_data_sources['available_data_sources']:
         raise ValueError(f"不支持的数据源: {data_source}")
         
     if data_source == 'futu':
         return _validate_futu_format(symbol)
     elif data_source == 'yfinance':
         return _validate_yfinance_format(symbol)
+
+def validate_symbols_format(symbols: list, data_source: str) -> bool:
+    """
+    验证股票代码格式是否符合数据源要求
+    
+    Args:
+        symbols: 股票代码列表
+        data_source: 数据源类型 ('futu', 'yfinance')
+        
+    Returns:
+        bool: 格式是否有效
+    """
+    if data_source not in settings.data.available_data_sources['available_data_sources']:
+        raise ValueError(f"不支持的数据源: {data_source}")
+        
+    if data_source == 'futu':
+        return all(_validate_futu_format(symbol) for symbol in symbols)
+    elif data_source == 'yfinance':
+        return all(_validate_yfinance_format(symbol) for symbol in symbols)
 
 def _validate_futu_format(symbol: str) -> bool:
     """

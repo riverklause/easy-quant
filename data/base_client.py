@@ -22,12 +22,12 @@ class BaseDataSourceClient(ABC):
         self.connected = False
     
     @abstractmethod
-    async def connect(self) -> bool:
+    def connect(self) -> bool:
         """连接数据源"""
         pass
     
     @abstractmethod
-    async def disconnect(self) -> bool:
+    def disconnect(self) -> bool:
         """断开数据源连接"""
         pass
     
@@ -58,15 +58,13 @@ class BaseDataSourceClient(ABC):
     @abstractmethod
     async def get_market_snapshot(
         self, 
-        symbol: str, 
-        adjusted: bool = True
+        symbol: str
     ) -> Dict[str, Any]:
         """
         获取市场快照数据
         
         Args:
             symbol: 股票代码
-            adjusted: 是否复权
             
         Returns:
             市场快照数据字典
@@ -105,17 +103,56 @@ class BaseDataSourceClient(ABC):
         """获取支持的数据周期"""
         pass
     
+    @abstractmethod
+    async def get_financial_statements(
+        self, 
+        symbol: str, 
+        statement_type: str, 
+        period: str = "annual"
+    ) -> pd.DataFrame:
+        """
+        获取财务报表数据
+        
+        Args:
+            symbol: 股票代码
+            statement_type: 报表类型 (balance, income, cash_flow)
+            period: 报告周期 (annual, quarterly)
+            
+        Returns:
+            财务报表数据DataFrame
+        """
+        pass
+    
+    @abstractmethod
+    async def get_financial_indicators(
+        self, 
+        symbol: str, 
+        period: str = "annual"
+    ) -> pd.DataFrame:
+        """
+        获取财务指标数据
+        
+        Args:
+            symbol: 股票代码
+            period: 报告周期 (annual, quarterly)
+            
+        Returns:
+            财务指标数据DataFrame
+        """
+        pass
+    
     def validate_symbol(self, symbol: str) -> bool:
         """验证股票代码格式"""
         # 基础验证，子类可以重写
         return bool(symbol and isinstance(symbol, str) and len(symbol) > 0)
     
     def validate_date_range(self, start_date: str, end_date: str) -> bool:
-        """验证日期范围"""
+        """验证日期范围，确保开始日期早于结束日期，且不晚于当前日期"""
+        now = datetime.now()
         try:
             start = datetime.strptime(start_date, "%Y-%m-%d")
             end = datetime.strptime(end_date, "%Y-%m-%d")
-            return start <= end
+            return start <= end and start <= now and end <= now
         except ValueError:
             return False
     

@@ -5,5 +5,6 @@
 
 from .futu_client import FutuAPIClient
 from .yfinance_client import YFinanceClient
+from .futu_realtime import FutuRTProcessor
 
-__all__ = ['FutuAPIClient', 'YFinanceClient']
+__all__ = ['FutuAPIClient', 'YFinanceClient', 'FutuRTProcessor']
