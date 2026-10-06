@@ -1,1 +1,8 @@
 utils/settings.py
+
+# 缓存与编译产物
+__pycache__/
+*.py[cod]
+.cache/
+.cache.db*
+
