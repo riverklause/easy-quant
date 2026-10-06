@@ -2,12 +2,17 @@
 Futu实时数据处理器
 专注于数据接收，直接传递DataFrame给下游
 """
+import logging
+import socket
 import time
 from datetime import datetime
 from typing import Dict, List, Callable, Any
 import pandas as pd
 from futu import *
 from ..base_client import BaseDataSourceClient
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 #实时回调函数，注意futu api对于多个股票的实时回调是单个输出的，不合并
 class FutuKlineHandler(CurKlineHandlerBase):
@@ -21,7 +26,7 @@ class FutuKlineHandler(CurKlineHandlerBase):
         """接收K线数据响应"""
         ret_code, data = super().on_recv_rsp(rsp_pb)
         if ret_code != RET_OK:
-            print(f"K线数据接收错误: {ret_code}")
+            logger.error(f"K线数据接收错误: {ret_code}")
             return ret_code, data
         
         if data is not None and len(data) > 0:
@@ -43,7 +48,7 @@ class FutuOrderBookHandler(OrderBookHandlerBase):
         """接收摆盘数据响应"""
         ret_code, data = super().on_recv_rsp(rsp_pb)
         if ret_code != RET_OK:
-            print(f"摆盘数据接收错误: {ret_code}")
+            logger.error(f"摆盘数据接收错误: {ret_code}")
             return ret_code, data
         
         if data is not None and len(data) > 0:
@@ -91,7 +96,7 @@ class FutuQuoteHandler(StockQuoteHandlerBase):
         """接收报价数据响应"""
         ret_code, data = super().on_recv_rsp(rsp_pb)
         if ret_code != RET_OK:
-            print(f"报价数据接收错误: {ret_code}")
+            logger.error(f"报价数据接收错误: {ret_code}")
             return ret_code, data
         
         if data is not None and len(data) > 0:
@@ -113,7 +118,7 @@ class FutuTickerHandler(TickerHandlerBase):
         """接收逐笔数据响应"""
         ret_code, data = super().on_recv_rsp(rsp_pb)
         if ret_code != RET_OK:
-            print(f"逐笔数据接收错误: {ret_code}")
+            logger.error(f"逐笔数据接收错误: {ret_code}")
             return ret_code, data
         
         if data is not None and len(data) > 0:
@@ -134,7 +139,7 @@ class FutuTimeShareHandler(RTDataHandlerBase):
         """接收分时数据响应"""
         ret_code, data = super().on_recv_rsp(rsp_pb)
         if ret_code != RET_OK:
-            print(f"分时接收错误: {ret_code}")
+            logger.error(f"分时接收错误: {ret_code}")
             return ret_code, data
         
         if data is not None and len(data) > 0:
@@ -175,7 +180,7 @@ class FutuRTProcessor(BaseDataSourceClient):
         """添加回调推送数据后的处理工具列表，注意：这里添加的回调工具必须是一个可以接收字典参数的函数或对象"""
         self.data_callbacks.append(callback)
         self.features['回调处理设置完成'] = True
-        print(f"✅ 数据回调函数已添加，当前回调数量: {len(self.data_callbacks)}")
+        logger.info(f"数据回调函数已添加，当前回调数量: {len(self.data_callbacks)}")
     
     def unregister_callback(self, callback: Callable = None):
         """移除回调推送数据后的处理工具列表"""
@@ -185,13 +190,13 @@ class FutuRTProcessor(BaseDataSourceClient):
             self.data_callbacks.remove(callback)
             if len(self.data_callbacks) == 0:
                 self.features['回调处理设置完成'] = False
-            print(f"✅ 数据回调函数已移除，当前回调数量: {len(self.data_callbacks)}")
+            logger.info(f"数据回调函数已移除，当前回调数量: {len(self.data_callbacks)}")
         elif callback is None:
             self.data_callbacks.clear()
             self.features['回调处理设置完成'] = False
-            print(f"✅ 所有数据回调函数已移除，当前回调数量: {len(self.data_callbacks)}")
+            logger.info(f"所有数据回调函数已移除，当前回调数量: {len(self.data_callbacks)}")
         else:
-            print("❌ 回调函数未找到，无法移除")
+            logger.warning("回调函数未找到，无法移除")
 
     def _data_handler(self, data: pd.DataFrame):
         """统一数据处理器 - 分发DataFrame数据"""
@@ -199,20 +204,34 @@ class FutuRTProcessor(BaseDataSourceClient):
             try:
                 callback(data)
             except Exception as e:
-                print(f"数据回调执行错误: {e}")
+                logger.error(f"数据回调执行错误: {e}")
     
     def connect(self):
         """连接Futu API"""
         try:
+            host = self.config.get('Futu_Host', '127.0.0.1')
+            port = self.config.get('Futu_Port', 11111)
+
+            # OpenQuoteContext 默认对不可达的 OpenD 无限重试，会导致启动永久卡住，
+            # 先做一次快速 TCP 探测，不可达则快速失败
+            try:
+                with socket.create_connection((host, port), timeout=2):
+                    pass
+            except OSError:
+                logger.warning(f"Futu OpenD 不可达 ({host}:{port})，跳过实时数据连接。"
+                               f"请先启动 FutuOpenD 后再重新运行本程序")
+                self.connected = False
+                return False
+
             self.quote_ctx = OpenQuoteContext(
-                host=self.config.get('Futu_Host', '127.0.0.1'),
-                port=self.config.get('Futu_Port', 11111)
+                host=host,
+                port=port
             )
-            print(f"✅ Futu API连接成功 (host={self.config.get('Futu_Host', '127.0.0.1')}, port={self.config.get('Futu_Port', 11111)})")
+            logger.info(f"Futu API连接成功 (host={host}, port={port})")
             self.connected = True
             return True
         except Exception as e:
-            print(f"❌ Futu API连接失败: {e}")
+            logger.error(f"Futu API连接失败: {e}")
             self.connected = False
             return False
     
@@ -222,7 +241,7 @@ class FutuRTProcessor(BaseDataSourceClient):
         #     symbols (List[str]): 股票代码列表，支持Futu格式
         #     data_types (List[str]): 数据类型列表，可选['kline', 'order_book', 'quote', 'ticker']
         if not self.quote_ctx:
-            print("❌ 请先连接Futu API")
+            logger.error("请先连接Futu API")
             return False
         
         try:
@@ -262,43 +281,43 @@ class FutuRTProcessor(BaseDataSourceClient):
                 if 'kline' in data_types:
                     ret, msg = self.quote_ctx.subscribe(symbol, SubType.K_1M, subscribe_push=True)
                     if ret == RET_OK:
-                        print(f"✅ 订阅 {symbol} K线数据成功")
+                        logger.info(f"订阅 {symbol} K线数据成功")
                     else:
-                        print(f"❌ 订阅 {symbol} K线数据失败: {msg}")
+                        logger.error(f"订阅 {symbol} K线数据失败: {msg}")
                 
                 if 'order_book' in data_types:
                     ret, msg = self.quote_ctx.subscribe(symbol, SubType.ORDER_BOOK, subscribe_push=True)
                     if ret == RET_OK:
-                        print(f"✅ 订阅 {symbol} 摆盘数据成功")
+                        logger.info(f"订阅 {symbol} 摆盘数据成功")
                     else:
-                        print(f"❌ 订阅 {symbol} 摆盘数据失败: {msg}")
+                        logger.error(f"订阅 {symbol} 摆盘数据失败: {msg}")
                 
                 if 'quote' in data_types:
                     ret, msg = self.quote_ctx.subscribe(symbol, SubType.QUOTE, subscribe_push=True)
                     if ret == RET_OK:
-                        print(f"✅ 订阅 {symbol} 报价数据成功")
+                        logger.info(f"订阅 {symbol} 报价数据成功")
                     else:
-                        print(f"❌ 订阅 {symbol} 报价数据失败: {msg}")
+                        logger.error(f"订阅 {symbol} 报价数据失败: {msg}")
                 
                 if 'ticker' in data_types:
                     ret, msg = self.quote_ctx.subscribe(symbol, SubType.TICKER, subscribe_push=True)
                     if ret == RET_OK:
-                        print(f"✅ 订阅 {symbol} 逐笔数据成功")
+                        logger.info(f"订阅 {symbol} 逐笔数据成功")
                     else:
-                        print(f"❌ 订阅 {symbol} 逐笔数据失败: {msg}")
+                        logger.error(f"订阅 {symbol} 逐笔数据失败: {msg}")
                 
                 if 'time_share' in data_types:
                     ret, msg = self.quote_ctx.subscribe(symbol, SubType.RT_DATA, subscribe_push=True)
                     if ret == RET_OK:
-                        print(f"✅ 订阅 {symbol} 分时数据成功")
+                        logger.info(f"订阅 {symbol} 分时数据成功")
                     else:
-                        print(f"❌ 订阅 {symbol} 分时数据失败: {msg}")
+                        logger.error(f"订阅 {symbol} 分时数据失败: {msg}")
             
             self.features['实时数据订阅完成'] = True
             return True
             
         except Exception as e:
-            print(f"❌ 数据订阅失败: {e}")
+            logger.error(f"数据订阅失败: {e}")
             return False
     
     def disconnect(self):
@@ -307,12 +326,12 @@ class FutuRTProcessor(BaseDataSourceClient):
         #     None
         if self.quote_ctx:
             self.quote_ctx.close()
-            print("✅ 实时数据订阅已取消")
+            logger.info("实时数据订阅已取消")
         self.connected = False
         self.unregister_callback() #unregister_callback自带处理后提示，这里是注销全部回调函数/对象
         self.features['实时数据订阅完成'] = False
         self.features['回调处理设置完成'] = False
-        print("✅ Futu API连接已关闭")
+        logger.info("Futu API连接已关闭")
 
     def get_supported_markets(self) -> List[str]:
         """获取Futu支持的市场列表

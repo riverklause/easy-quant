@@ -2,6 +2,8 @@
 Futu API数据源客户端
 """
 import asyncio
+import logging
+import socket
 import time
 from typing import Dict, List, Optional, Any
 from datetime import datetime
@@ -9,6 +11,9 @@ import pandas as pd
 import futu as ft
 from futu import Market, SecurityType, SimpleFilter, AccumulateFilter, StockField, SortDir, RET_OK
 from ..base_client import BaseDataSourceClient
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 
 class FutuAPIClient(BaseDataSourceClient):
@@ -53,17 +58,31 @@ class FutuAPIClient(BaseDataSourceClient):
             Exception: 连接过程中出现错误时抛出异常
         """
         try:
+            host = self.config.get('Futu_Host', '127.0.0.1')
+            port = self.config.get('Futu_Port', 11111)
+
+            # OpenQuoteContext 默认对不可达的 OpenD 无限重试，会导致启动永久卡住，
+            # 先做一次快速 TCP 探测，不可达则快速失败（Web 界面仍可正常使用）
+            try:
+                with socket.create_connection((host, port), timeout=2):
+                    pass
+            except OSError:
+                logger.warning(f"Futu OpenD 不可达 ({host}:{port})，跳过连接。"
+                               f"请先启动 FutuOpenD 后再重新运行本程序")
+                self.connected = False
+                return False
+
             # 创建行情上下文
             self.quote_ctx = ft.OpenQuoteContext(
-                host=self.config.get('Futu_Host', '127.0.0.1'),
-                port=self.config.get('Futu_Port', 11111)
+                host=host,
+                port=port
             )
-            
+
             # 创建交易上下文（如果需要交易功能）
             if self.config.get('Futu_TrdEnv') == 'REAL':
                 self.trade_ctx = ft.OpenSecTradeContext(
-                    host=self.config.get('Futu_Host', '127.0.0.1'),
-                    port=self.config.get('Futu_Port', 11111),
+                    host=host,
+                    port=port,
                     security_firm=ft.SecurityFirm.FUTUSECURITIES
                 )
             
@@ -71,7 +90,7 @@ class FutuAPIClient(BaseDataSourceClient):
             return True
             
         except Exception as e:
-            print(f"Futu连接失败: {e}")
+            logger.error(f"Futu连接失败: {e}")
             self.connected = False
             return False
 
@@ -94,7 +113,7 @@ class FutuAPIClient(BaseDataSourceClient):
             self.connected = False
             return True
         except Exception as e:
-            print(f"Futu断开连接失败: {e}")
+            logger.error(f"Futu断开连接失败: {e}")
             return False
     
     async def get_historical_data(
@@ -238,7 +257,7 @@ class FutuAPIClient(BaseDataSourceClient):
         for i, result in enumerate(completed_tasks):
             symbol = symbols[i]
             if isinstance(result, Exception):
-                print(f"获取{symbol}数据失败: {result}")
+                logger.error(f"获取{symbol}数据失败: {result}")
             elif not result.empty:
 
                 result = result.reset_index()
@@ -362,7 +381,7 @@ class FutuAPIClient(BaseDataSourceClient):
                 return pd.DataFrame()
                 
         except Exception as e:
-            print(f"获取Futu财务指标数据错误: {e}")
+            logger.error(f"获取Futu财务指标数据错误: {e}")
             return pd.DataFrame()
     
     def _convert_period(self, period: str) -> int:

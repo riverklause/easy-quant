@@ -2,6 +2,18 @@
 Dash Web应用 - 使用 dash-extensions 实现实时推送
 """
 
+import os
+import sys
+from pathlib import Path
+
+# 支持在资源管理器中直接双击运行：双击时工作目录是 web/，
+# 需把项目根目录加入 sys.path 并切换过去，否则 web 包导入和
+# ./.cache、data 等相对路径都会失败
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+os.chdir(_PROJECT_ROOT)
+
 from dash import Dash, html, dcc, Input, Output, callback, callback_context, State, no_update
 from dash import DiskcacheManager
 import dash_bootstrap_components as dbc
@@ -9,7 +21,6 @@ from dash_extensions import WebSocket
 from datetime import datetime
 import diskcache
 import pandas as pd
-from pathlib import Path
 
 data_state_manager = None
 data_manager = None
@@ -203,4 +214,11 @@ def start_server(host='0.0.0.0', port=8050, debug=True):
 
 
 if __name__ == '__main__':
-    start_server()
+    try:
+        start_server()
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        # 双击运行时窗口会随进程退出而关闭，暂停以便查看报错
+        print("\n启动失败，按回车键退出...")
+        input()
