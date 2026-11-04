@@ -293,6 +293,63 @@ class StrategyExecutor:
         )
         print(f"实时模式已启动，间隔{interval}秒")
     
+    def _realtime_tick(self,
+                       data_manager,
+                       symbols: List[str],
+                       strategies: Dict[str, BaseStrategy]):
+        """执行一轮实时评估（内部方法）。"""
+        # 收集所有策略所需的所有指标（策略声明是静态的，不必逐股票重算）
+        all_indicators = set()
+        for strategy in strategies.values():
+            all_indicators.update(self.get_required_indicators(strategy))
+        
+        # 遍历所有股票
+        for symbol in symbols:
+            # 从data_manager获取该股票的实时K线数据
+            kline_data = data_manager.get_realtime_data('kline', symbol)
+            
+            if kline_data is None or len(kline_data) == 0:
+                continue
+            
+            # 使用实时模式计算指标（覆盖更新缓存）
+            if all_indicators:
+                self.calculator.batch_calculate(
+                    kline_data,
+                    list(all_indicators),
+                    use_cache=True,
+                    cache_mode='realtime'
+                )
+        
+        # 执行所有策略
+        for strategy_id, strategy in strategies.items():
+            try:
+                # 从实时缓存读取指标数据
+                indicators_data = {}
+                required_indicators = self.get_required_indicators(strategy)
+                
+                for indicator_id in required_indicators:
+                    for symbol in symbols:
+                        indicator_df = self.calculator.get_indicator(
+                            symbol, indicator_id, cache_mode='realtime'
+                        )
+                        if indicator_df is not None:
+                            if symbol not in indicators_data:
+                                indicators_data[symbol] = {}
+                            indicators_data[symbol][indicator_id] = indicator_df
+                
+                # 执行策略
+                if indicators_data:
+                    signals = strategy.generate_signals(indicators_data)
+                    if signals:
+                        print(f"策略 '{strategy_id}' 产生信号: {signals}")
+                
+                self.execution_stats['successful_executions'] += 1
+            except Exception as e:
+                self.execution_stats['failed_executions'] += 1
+                print(f"执行策略 '{strategy_id}' 失败: {e}")
+        
+        self.execution_stats['total_executions'] += 1
+    
     async def _realtime_loop(self,
                             data_manager,
                             symbols: List[str],
@@ -307,58 +364,7 @@ class StrategyExecutor:
         """
         try:
             while self._realtime_running:
-                # 遍历所有股票
-                for symbol in symbols:
-                    # 从data_manager获取该股票的实时K线数据
-                    kline_data = data_manager.get_realtime_data('kline', symbol)
-                    
-                    if kline_data is None or len(kline_data) == 0:
-                        continue
-                    
-                    # 收集该股票所需的所有指标
-                    all_indicators = set()
-                    for strategy in strategies.values():
-                        required_indicators = self.get_required_indicators(strategy)
-                        all_indicators.update(required_indicators)
-                    
-                    # 使用实时模式计算指标（覆盖更新缓存）
-                    if all_indicators:
-                        self.calculator.batch_calculate(
-                            kline_data,
-                            list(all_indicators),
-                            use_cache=True,
-                            cache_mode='realtime'
-                        )
-                
-                # 执行所有策略
-                for strategy_id, strategy in strategies.items():
-                    try:
-                        # 从实时缓存读取指标数据
-                        indicators_data = {}
-                        required_indicators = self.get_required_indicators(strategy)
-                        
-                        for indicator_id in required_indicators:
-                            for symbol in symbols:
-                                indicator_df = self.calculator.get_indicator(
-                                    symbol, indicator_id, cache_mode='realtime'
-                                )
-                                if indicator_df is not None:
-                                    if symbol not in indicators_data:
-                                        indicators_data[symbol] = {}
-                                    indicators_data[symbol][indicator_id] = indicator_df
-                        
-                        # 执行策略
-                        if indicators_data:
-                            signals = strategy.generate_signals(indicators_data)
-                            if signals:
-                                print(f"策略 '{strategy_id}' 产生信号: {signals}")
-                        
-                        self.execution_stats['successful_executions'] += 1
-                    except Exception as e:
-                        self.execution_stats['failed_executions'] += 1
-                        print(f"执行策略 '{strategy_id}' 失败: {e}")
-                
-                self.execution_stats['total_executions'] += 1
+                self._realtime_tick(data_manager, symbols, strategies)
                 
                 # 等待下一个周期
                 await asyncio.sleep(self._realtime_interval)
