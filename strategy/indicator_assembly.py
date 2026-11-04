@@ -22,13 +22,10 @@ def ensure_indicators(
 
         existing = calculator.indicators.get(spec.id)
         if existing is not None:
-            declared = {
-                key: getattr(existing, "parameters", {}).get(key)
-                for key in spec.params
-            }
-            if type(existing).__name__ != spec.class_name or declared != spec.params:
+            if getattr(existing, "_declared_spec", None) != spec:
                 raise ValueError(f"指标 id 冲突: {spec.id}")
             continue
 
         indicator = registry.create_indicator(spec.class_name, **spec.params)
+        indicator._declared_spec = spec
         calculator.register_indicator(indicator, spec.id)
