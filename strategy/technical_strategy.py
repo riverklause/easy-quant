@@ -6,7 +6,7 @@
 
 from typing import List, Dict, Optional, Any
 
-from strategy.indicator_spec import IndicatorDecl, indicator_ids
+from strategy.indicator_spec import IndicatorDecl, IndicatorSpec, indicator_ids
 from strategy.base_strategy import BaseStrategy
 
 import logging
@@ -79,7 +79,12 @@ class TechnicalStrategy(BaseStrategy):
         if indicator_name not in self.required_indicators:
             self.required_indicators.append(indicator_name)
     
-    def get_required_indicators(self) -> List[str]:
+    def add_indicator_spec(self, spec: IndicatorSpec):
+        """声明一个需要参数的指标。"""
+        if spec not in self.required_indicators:
+            self.required_indicators.append(spec)
+    
+    def get_required_indicators(self) -> List[IndicatorDecl]:
         """
         获取策略所需的所有指标
         

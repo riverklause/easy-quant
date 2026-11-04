@@ -346,6 +346,8 @@ class BacktestEngine:
                 )
             try:
                 signals = self._generate_signals(strategy, date, current_prices)
+            except IndicatorCalculationError:
+                raise
             except Exception as e:
                 print(f"执行策略 {strategy.name} 出错: {e}")
                 continue
@@ -406,6 +408,15 @@ class BacktestEngine:
                         current_date_data, required_ids, use_cache=False
                     )
                     indicators_data = next(iter(batch.values()), {})
+
+                    errors = {
+                        key: value["error"]
+                        for key, value in indicators_data.items()
+                        if isinstance(value, dict) and "error" in value
+                    }
+                    if errors:
+                        self.indicator_errors += 1
+                        raise IndicatorCalculationError(f"指标计算失败: {errors}")
                 else:
                     indicators_data = current_date_data
                 
@@ -421,7 +432,10 @@ class BacktestEngine:
                         'strategy': strategy.name
                     })
                     
+            except IndicatorCalculationError:
+                raise
             except Exception:
+                self.failed_signals += 1
                 continue
         
         return signals

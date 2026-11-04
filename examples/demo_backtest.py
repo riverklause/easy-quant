@@ -8,6 +8,8 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)) + '/..')
 
+from strategy.indicator_spec import IndicatorSpec
+
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -33,7 +35,10 @@ class SimpleMovingAverageStrategy(TechnicalStrategy):
         self.long_period = long_period
         self.position = None
         
-        self.required_indicators = [f'sma_{self.short_period}', f'sma_{self.long_period}']
+        self.required_indicators = [
+            IndicatorSpec(f'sma_{self.short_period}', 'SMA', {'period': self.short_period}),
+            IndicatorSpec(f'sma_{self.long_period}', 'SMA', {'period': self.long_period}),
+        ]
         
     def generate_signals(self, indicators_data, **kwargs):
         signals = []
@@ -96,7 +101,9 @@ class RSIStrategy(TechnicalStrategy):
         self.overbought = overbought
         self.position = None
         
-        self.required_indicators = [f'rsi_{self.rsi_period}']
+        self.required_indicators = [
+            IndicatorSpec(f'rsi_{self.rsi_period}', 'RSI', {'period': self.rsi_period}),
+        ]
         
     def generate_signals(self, indicators_data, **kwargs):
         signals = []
