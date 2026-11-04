@@ -11,3 +11,6 @@ __pycache__/
 .cache.db*
 
 /data/historical
+
+# 调试输出
+/test_output.txt
