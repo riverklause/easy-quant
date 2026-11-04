@@ -65,7 +65,6 @@ class SimpleMovingAverageStrategy(TechnicalStrategy):
                 signals.append({
                     'type': 'BUY',
                     'symbol': symbol,
-                    'price': data['close'].iloc[-1],
                     'reason': f'SMA{self.short_period} 上穿 SMA{self.long_period}'
                 })
                 self.position = symbol
@@ -73,7 +72,6 @@ class SimpleMovingAverageStrategy(TechnicalStrategy):
                 signals.append({
                     'type': 'SELL',
                     'symbol': symbol,
-                    'price': data['close'].iloc[-1],
                     'reason': f'SMA{self.short_period} 下穿 SMA{self.long_period}'
                 })
                 self.position = None

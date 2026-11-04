@@ -16,7 +16,7 @@ class ADXCondition(TechnicalCondition):
         adx_indicator = ADX(period=self.period)
         result = adx_indicator.calculate(data)
         if hasattr(result, 'iloc'):
-            value = result.iloc[-1]
+            value = result['adx'].iloc[-1]
             return value
         return result
 
