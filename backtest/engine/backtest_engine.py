@@ -26,6 +26,10 @@ from strategy.technical_strategy import TechnicalStrategy
 from strategy.multi_factor.multi_factor_strategy import MultiFactorStrategy
 
 
+class IndicatorCalculationError(RuntimeError):
+    """指标计算/装配失败：必须冒泡，不允许按股票或策略静默跳过。"""
+
+
 class BacktestEngine:
     """
     回测引擎
@@ -85,6 +89,7 @@ class BacktestEngine:
         self._is_running = False
         self._results: Optional[BacktestResult] = None
         self.failed_signals = 0
+        self.indicator_errors = 0
         
         self._progress_callback: Optional[Callable] = None
     
@@ -121,6 +126,7 @@ class BacktestEngine:
         self._is_running = True
         self.portfolio.reset()
         self.failed_signals = 0
+        self.indicator_errors = 0
         for strategy in self.strategies:
             strategy.reset_stats()
         
@@ -211,6 +217,7 @@ class BacktestEngine:
         self._is_running = True
         self.portfolio.reset()
         self.failed_signals = 0
+        self.indicator_errors = 0
         for strategy in self.strategies:
             strategy.reset_stats()
         

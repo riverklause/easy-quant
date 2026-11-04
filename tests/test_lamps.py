@@ -14,7 +14,7 @@ from datetime import datetime
 import pandas as pd
 import pytest
 
-from backtest.engine.backtest_engine import BacktestEngine
+from backtest.engine.backtest_engine import BacktestEngine, IndicatorCalculationError
 from backtest.engine.portfolio import Portfolio
 from backtest.datafeed.historical_datafeed import HistoricalDataFeed
 from strategy.indicator_spec import IndicatorSpec
@@ -235,6 +235,18 @@ def test_L4c_engine_builds_declared_indicators():
     assert strategy.signal_errors == 0, f"装配失败: {strategy.last_signal_error!r}"
     assert "sma_5" in engine.indicator_calculator.indicators
     assert engine.indicator_calculator.indicators["sma_5"].period == 5
+
+
+def test_L4c2_indicator_failure_is_loud():
+    """L4c2 计算期失败：指标算错必须冒泡，不能按股票/策略静默跳过。"""
+    engine = BacktestEngine(strategy=_NeedsIndicators(), initial_capital=1_000_000)
+    bad = _deterministic_bars().drop(columns=["close"])
+    engine._data = {"X": bad}
+
+    with pytest.raises(IndicatorCalculationError, match="指标计算失败"):
+        engine._execute_strategy(bad.index[-1], {"X": 11.9})
+
+    assert engine.indicator_errors == 1
 
 
 class _SpyFeed(HistoricalDataFeed):
