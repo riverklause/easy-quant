@@ -102,3 +102,20 @@ def test_R4_cancel_propagates():
         return task.cancelled()
 
     assert asyncio.run(scenario()) is True
+
+
+def test_R3_task_exception_is_recorded():
+    executor = StrategyExecutor(calculator=_FakeCalculator(bad_symbols=set()))
+
+    async def boom():
+        raise IndicatorCalculationError("装配失败")
+
+    async def scenario():
+        task = asyncio.create_task(boom())
+        task.add_done_callback(executor._on_realtime_task_done)
+        with pytest.raises(IndicatorCalculationError):
+            await task
+        await asyncio.sleep(0)        # 让 done callback 跑完
+
+    asyncio.run(scenario())
+    assert "装配失败" in (executor.realtime_stats["stopped_reason"] or "")
