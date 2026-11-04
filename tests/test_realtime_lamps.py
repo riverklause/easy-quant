@@ -3,6 +3,7 @@
 import asyncio
 
 import pandas as pd
+import pytest
 
 from indicators.base.errors import IndicatorCalculationError
 from strategy.strategy_executor import StrategyExecutor
@@ -83,3 +84,21 @@ def test_R2_circuit_breaker_stops_after_consecutive_failures():
     assert executor.realtime_stats["ticks"] == 2, "熔断没有在连续失败后停止"
     assert executor.is_realtime_running() is False
     assert "连续" in (executor.realtime_stats["stopped_reason"] or "")
+
+
+def test_R4_cancel_propagates():
+    executor = StrategyExecutor(calculator=_FakeCalculator(bad_symbols=set()))
+    executor._realtime_interval = 0
+    executor._realtime_running = True
+
+    async def scenario():
+        task = asyncio.create_task(
+            executor._realtime_loop(_DataManager(["A"]), ["A"], {"s": _Recorder()})
+        )
+        await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        return task.cancelled()
+
+    assert asyncio.run(scenario()) is True
