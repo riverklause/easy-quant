@@ -8,6 +8,9 @@ from datetime import datetime
 import pandas as pd
 import numpy as np
 import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
 
 from backtest.engine.portfolio import Portfolio
 from backtest.engine.order_executor import SimpleOrderExecutor, OrderSide
@@ -89,6 +92,7 @@ class BacktestEngine:
         self._is_running = False
         self._results: Optional[BacktestResult] = None
         self.failed_signals = 0
+        self.failed_strategies = 0
         self.indicator_errors = 0
         
         self._progress_callback: Optional[Callable] = None
@@ -126,6 +130,7 @@ class BacktestEngine:
         self._is_running = True
         self.portfolio.reset()
         self.failed_signals = 0
+        self.failed_strategies = 0
         self.indicator_errors = 0
         for strategy in self.strategies:
             strategy.reset_stats()
@@ -217,6 +222,7 @@ class BacktestEngine:
         self._is_running = True
         self.portfolio.reset()
         self.failed_signals = 0
+        self.failed_strategies = 0
         self.indicator_errors = 0
         for strategy in self.strategies:
             strategy.reset_stats()
@@ -349,7 +355,8 @@ class BacktestEngine:
             except IndicatorCalculationError:
                 raise
             except Exception as e:
-                print(f"执行策略 {strategy.name} 出错: {e}")
+                self.failed_strategies += 1
+                logger.exception("执行策略 %s 出错: %s", strategy.name, e)
                 continue
             
             for signal in signals:
@@ -357,7 +364,7 @@ class BacktestEngine:
                     self._process_signal(signal, date, current_prices)
                 except Exception as e:
                     self.failed_signals += 1
-                    print(f"处理信号出错: {e}")
+                    logger.exception("处理信号出错: %s", e)
     
     def _generate_signals(self, 
                          strategy: BaseStrategy, 
@@ -410,8 +417,9 @@ class BacktestEngine:
                     indicators_data = next(iter(batch.values()), {})
 
                     errors = {
-                        key: value["error"]
-                        for key, value in indicators_data.items()
+                        f"{sym}.{key}": value["error"]
+                        for sym, group in batch.items()
+                        for key, value in group.items()
                         if isinstance(value, dict) and "error" in value
                     }
                     if errors:
@@ -473,7 +481,8 @@ class BacktestEngine:
                         })
                         
             except Exception as e:
-                print(f"多因子策略信号生成失败: {e}")
+                self.failed_strategies += 1
+                logger.exception("多因子策略信号生成失败: %s", e)
         
         return signals
     
@@ -583,6 +592,11 @@ class BacktestEngine:
                 'commission_rate': self.portfolio.commission_rate,
                 'slippage': self.portfolio.slippage,
                 'risk_free_rate': self.risk_free_rate,
+            },
+            execution_failures={
+                "signals": self.failed_signals,
+                "strategies": self.failed_strategies,
+                "indicators": self.indicator_errors,
             }
         )
     
@@ -593,6 +607,7 @@ class BacktestEngine:
             start_date=start_date,
             end_date=end_date,
             initial_capital=self.initial_capital,
+            execution_failures={"signals": 0, "strategies": 0, "indicators": 0},
         )
     
     def get_results(self) -> Optional[BacktestResult]:
