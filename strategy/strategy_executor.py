@@ -12,6 +12,7 @@ from indicators.base.calculator import IndicatorCalculator
 from indicators.base.registry import IndicatorRegistry
 from strategy.base_strategy import BaseStrategy
 from strategy.technical_strategy import TechnicalStrategy
+from strategy.indicator_spec import indicator_ids
 from strategy.multi_factor.multi_factor_strategy import MultiFactorStrategy
 
 
@@ -70,7 +71,7 @@ class StrategyExecutor:
             所需指标名称列表
         """
         if isinstance(strategy, TechnicalStrategy):
-            return strategy.get_required_indicators()
+            return indicator_ids(strategy.get_required_indicators())
         elif isinstance(strategy, MultiFactorStrategy):
             return strategy.factor_names
         else:

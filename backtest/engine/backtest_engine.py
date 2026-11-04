@@ -19,6 +19,7 @@ from backtest.results.result_store import BacktestResult
 from indicators.base.calculator import IndicatorCalculator
 
 from strategy.base_strategy import BaseStrategy
+from strategy.indicator_spec import indicator_ids
 from strategy.technical_strategy import TechnicalStrategy
 from strategy.multi_factor.multi_factor_strategy import MultiFactorStrategy
 
@@ -375,8 +376,9 @@ class BacktestEngine:
             try:
                 required = strategy.get_required_indicators()
                 if required:
+                    required_ids = indicator_ids(required)
                     batch = self.indicator_calculator.batch_calculate(
-                        current_date_data, required, use_cache=False
+                        current_date_data, required_ids, use_cache=False
                     )
                     indicators_data = next(iter(batch.values()), {})
                 else:

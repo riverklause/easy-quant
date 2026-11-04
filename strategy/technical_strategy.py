@@ -5,6 +5,8 @@
 """
 
 from typing import List, Dict, Optional, Any
+
+from strategy.indicator_spec import IndicatorDecl, indicator_ids
 from strategy.base_strategy import BaseStrategy
 
 import logging
@@ -29,7 +31,7 @@ class TechnicalStrategy(BaseStrategy):
         super().__init__(name)
         
         # 策略所需的技术指标列表
-        self.required_indicators: List[str] = []
+        self.required_indicators: List[IndicatorDecl] = []
         
         # 策略规则定义
         self.rules: List[Dict] = []
@@ -39,6 +41,7 @@ class TechnicalStrategy(BaseStrategy):
         
         # 信号生成失败计数（可聚合，供回测/监控消费）
         self.signal_errors = 0
+        self.last_signal_error: Optional[Exception] = None
     
     def initialize(self, **kwargs):
         """
@@ -104,8 +107,9 @@ class TechnicalStrategy(BaseStrategy):
         
         try:
             # 验证所需指标是否齐全
+            required_ids = indicator_ids(self.required_indicators)
             missing_indicators = [
-                indicator for indicator in self.required_indicators 
+                indicator for indicator in required_ids
                 if indicator not in indicators_data
             ]
             
@@ -121,6 +125,7 @@ class TechnicalStrategy(BaseStrategy):
                 
         except Exception as e:
             self.signal_errors += 1
+            self.last_signal_error = e
             logger.exception("技术指标策略 '%s' 生成信号失败: %s", self.name, e)
         
         return signals

@@ -17,7 +17,7 @@ import pytest
 from backtest.engine.backtest_engine import BacktestEngine
 from backtest.engine.portfolio import Portfolio
 from backtest.datafeed.historical_datafeed import HistoricalDataFeed
-from indicators.technical.trend.moving_average import SMA
+from strategy.indicator_spec import IndicatorSpec
 from strategy.technical_strategy import TechnicalStrategy
 
 DATE = pd.Timestamp("2024-01-02")
@@ -140,7 +140,7 @@ class _NeedsIndicators(TechnicalStrategy):
 
     def __init__(self):
         super().__init__("l4b")
-        self.required_indicators = ["sma_5"]
+        self.required_indicators = [IndicatorSpec("sma_5", "SMA", {"period": 5})]
         self.calls = 0
 
     def generate_signals(self, indicators_data, **kwargs):
@@ -189,13 +189,12 @@ def test_L4b_strategy_receives_indicators():
         commission_rate=0.001,
     )
     engine._data = {"X": _deterministic_bars()}
-    engine.indicator_calculator.register_indicator(SMA(period=5), "sma_5")
     date = engine._data["X"].index[-1]
 
     engine._execute_strategy(date, {"X": 11.9})
 
     assert strategy.calls == 1, "引擎没有把任何数据交给策略"
-    assert strategy.signal_errors == 0, "策略拿不到指标：引擎传的是 OHLC，不是指标字典"
+    assert strategy.signal_errors == 0, f"策略拿不到指标: {strategy.last_signal_error!r}"
 
 
 def test_L4b2_signals_reach_the_book():
@@ -211,13 +210,31 @@ def test_L4b2_signals_reach_the_book():
         commission_rate=0.001,
     )
     engine._data = {"X": _deterministic_bars()}
-    engine.indicator_calculator.register_indicator(SMA(period=5), "sma_5")
     date = engine._data["X"].index[-1]
 
     engine._execute_strategy(date, {"X": 11.9})
 
     assert [t["action"] for t in engine.portfolio.trade_history] == ["BUY"]
     assert engine.failed_signals == 0
+
+
+def test_L4c_engine_builds_declared_indicators():
+    """L4c 装配契约：引擎必须按 IndicatorSpec 实例化并注册指标。
+
+    id 相同但 period 不同是可观测的错数，所以断言 period，而不是只断言 key 存在。
+    """
+    strategy = _NeedsIndicators()
+    engine = BacktestEngine(strategy=strategy, initial_capital=1_000_000)
+    engine._data = {"X": _deterministic_bars()}
+
+    assert engine.indicator_calculator.indicators == {}, "calculator 起点必须为空"
+
+    engine._execute_strategy(engine._data["X"].index[-1], {"X": 11.9})
+
+    assert strategy.calls == 1
+    assert strategy.signal_errors == 0, f"装配失败: {strategy.last_signal_error!r}"
+    assert "sma_5" in engine.indicator_calculator.indicators
+    assert engine.indicator_calculator.indicators["sma_5"].period == 5
 
 
 class _SpyFeed(HistoricalDataFeed):
