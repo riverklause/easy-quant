@@ -2,6 +2,8 @@
 
 import asyncio
 
+import pandas as pd
+
 from backtest.datafeed.historical_datafeed import HistoricalDataFeed
 
 
@@ -13,3 +15,4 @@ def test_monthly_frequency_produces_bars():
 
     assert list(bars) == ["X"]
     assert len(bars["X"]) == 12
+    assert bars["X"].index[0] == pd.Timestamp("2021-01-31")
