@@ -229,6 +229,7 @@ class BacktestEngine:
             strategy.reset_stats()
         
         self._data = await self.datafeed.get_data(symbols, start_date, end_date, frequency)
+        self._mark_data_source()
         
         if not self._data:
             return self._create_empty_result(start_date, end_date)
@@ -281,11 +282,18 @@ class BacktestEngine:
         data = asyncio.run(
             self.datafeed.get_data(symbols, start_date, end_date, frequency)
         )
-        self.data_source = (
-            "mock" if getattr(self.datafeed, "used_mock", False)
-            else type(self.datafeed).__name__
-        )
+        self._mark_data_source()
         return data
+
+    def _mark_data_source(self):
+        """标出本次回测的数据来源：mock 回落 / 真实 datafeed。
+
+        语义值不暴露实现类名，避免消费方与夹具/实现绑定；
+        需要溯源时看 result.config["datafeed"]。
+        """
+        self.data_source = (
+            "mock" if getattr(self.datafeed, "used_mock", False) else "datafeed"
+        )
     
     def _get_strategy_symbols(self) -> List[str]:
         """获取策略所需的股票代码"""
@@ -598,6 +606,7 @@ class BacktestEngine:
                 'commission_rate': self.portfolio.commission_rate,
                 'slippage': self.portfolio.slippage,
                 'risk_free_rate': self.risk_free_rate,
+                'datafeed': type(self.datafeed).__name__,
             },
             execution_failures={
                 "signals": self.failed_signals,
