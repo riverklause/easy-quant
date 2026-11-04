@@ -8,7 +8,8 @@ from datetime import datetime
 import pandas as pd
 import numpy as np
 import json
-from pathlib import Path
+
+from data.storage.local_storage import LocalStorageManager
 
 
 @dataclass
@@ -97,7 +98,8 @@ class DataStateManager:
         self._update_version = 0
         self._last_update_data: Dict[str, Any] = {}
 
-        self._data_dir = Path("data")
+        # 元数据路径统一由 LocalStorageManager 决定：data/meta/{name}.parquet
+        self._storage = LocalStorageManager()
         self._load_alert_configs()
         self._load_strategy_status()
 
@@ -296,7 +298,7 @@ class DataStateManager:
                     'enabled': config.enabled,
                     'created_at': config.created_at.isoformat()
                 })
-            file_path = self._data_dir / 'AlertConfig.parquet'
+            file_path = self._storage.build_meta_path('AlertConfig')
             if data:
                 pd.DataFrame(data).to_parquet(file_path)
         except Exception as e:
@@ -305,7 +307,7 @@ class DataStateManager:
     def _load_alert_configs(self) -> None:
         """从文件加载告警配置"""
         try:
-            file_path = self._data_dir / 'AlertConfig.parquet'
+            file_path = self._storage.build_meta_path('AlertConfig')
             if file_path.exists():
                 df = pd.read_parquet(file_path)
                 for _, row in df.iterrows():
@@ -383,7 +385,7 @@ class DataStateManager:
                     'total_asset': status.total_asset,
                     'logs': json.dumps(status.logs[-20:])
                 })
-            file_path = self._data_dir / 'StrategyStatus.parquet'
+            file_path = self._storage.build_meta_path('StrategyStatus')
             if data:
                 pd.DataFrame(data).to_parquet(file_path)
         except Exception as e:
@@ -392,7 +394,7 @@ class DataStateManager:
     def _load_strategy_status(self) -> None:
         """从文件加载策略状态"""
         try:
-            file_path = self._data_dir / 'StrategyStatus.parquet'
+            file_path = self._storage.build_meta_path('StrategyStatus')
             if file_path.exists():
                 df = pd.read_parquet(file_path)
                 for _, row in df.iterrows():

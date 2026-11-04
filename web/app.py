@@ -3,6 +3,7 @@ Dash Web应用 - 使用 dash-extensions 实现实时推送
 """
 
 import os
+import socket
 import sys
 from pathlib import Path
 
@@ -52,11 +53,27 @@ app.layout = html.Div([
     
     html.Div(id='page-content', className='mt-4'),
     
-    WebSocket(id='ws', url='ws://127.0.0.1:8050/ws'),
+    WebSocket(id='ws', url=''),
     
     dcc.Interval(id='interval', interval=1000),
 
 ])
+
+
+# 根据浏览器当前地址动态生成 WebSocket URL，避免硬编码 127.0.0.1
+# 导致通过域名/IPv6 访问时 WS 连接失败
+app.clientside_callback(
+    """
+    function(href) {
+        if (!href) return '';
+        const url = new URL(href);
+        const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+        return protocol + '//' + url.host + '/ws';
+    }
+    """,
+    Output('ws', 'url'),
+    Input('url', 'href')
+)
 
 
 # ========== 页面路由 ==========
@@ -94,10 +111,10 @@ def display_page(pathname):
 
 
 # ========== 控制面板-股票页面回调 ==========
-DATA_DIR = Path("data")
-STOCK_LIST_FILE = DATA_DIR / "StockList.parquet"
-STOCK_BASIC_INFO_FILE = DATA_DIR / "StockBasicInfo.parquet"
-STOCK_BASIC_FILTERED_FILE = DATA_DIR / "StockBasicFiltered.parquet"
+# 元数据路径统一由 LocalStorageManager 决定：data/meta/{name}.parquet
+from data.storage.local_storage import LocalStorageManager
+
+STOCK_LIST_FILE = LocalStorageManager().build_meta_path("StockList")
 
 
 @app.callback(
@@ -168,12 +185,83 @@ def remove_stocks(n_clicks, selected_codes):
     Output('download-progress', 'children'),
     Input('download-btn', 'n_clicks'),
     [State('download-symbols', 'value'), State('download-source', 'value'), State('download-period', 'value'), State('download-start-date', 'value'), State('download-end-date', 'value')],
+    prevent_initial_call=True,
 )
 def download_data(n_clicks, symbols, source, period, start_date, end_date):
     """下载历史数据"""
-    if n_clicks and symbols and start_date and end_date:
-        return dbc.Alert(f"开始下载 {symbols} 的数据...", color="info")
-    return ""
+    if not n_clicks:
+        return ""
+
+    if not start_date or not end_date:
+        return dbc.Alert("请填写开始日期和结束日期", color="warning")
+
+    if data_manager is None:
+        return dbc.Alert("数据管理器未初始化，请重启服务", color="danger")
+
+    # 1) 连接所选数据源
+    client = data_manager.clients.get(source)
+    if client is None:
+        return dbc.Alert(f"数据源 {source} 未配置或不可用", color="danger")
+    if not getattr(client, 'connected', False):
+        try:
+            if not client.connect():
+                return dbc.Alert(f"数据源 {source} 连接失败，请检查后重试", color="danger")
+        except Exception as e:
+            return dbc.Alert(f"数据源 {source} 连接失败: {e}", color="danger")
+
+    # 不填股票代码时，默认下载关注股票列表中的所有股票
+    if symbols and symbols.strip():
+        symbol_list = [s.strip() for s in symbols.split(',') if s.strip()]
+    else:
+        stock_list_file = STOCK_LIST_FILE
+        if not stock_list_file.exists():
+            return dbc.Alert("未填写股票代码，且关注股票列表为空，请先添加关注股票", color="warning")
+        stock_df = pd.read_parquet(stock_list_file)
+        symbol_list = stock_df['code'].dropna().astype(str).str.strip().tolist()
+        symbol_list = [s for s in symbol_list if s]
+        if not symbol_list:
+            return dbc.Alert("未填写股票代码，且关注股票列表为空，请先添加关注股票", color="warning")
+
+    import asyncio
+    from data.storage.local_storage import LocalStorageManager
+
+    storage = LocalStorageManager()
+    # 存储键：股票代码 + K线类型 + 数据源（不含日期），
+    # 便于对同一标的同一周期的历史数据做替换式增量更新
+    data_type = f'historical_{period}'
+    results = []
+
+    for sym in symbol_list:
+        try:
+            # 2) 按K线类型、股票代码、起止日期获取数据
+            df = asyncio.run(data_manager.get_historical_data(
+                symbol=sym,
+                start_date=start_date,
+                end_date=end_date,
+                data_source=source,
+                period=period,
+            ))
+            if df.empty:
+                results.append(dbc.Alert(f"{sym}: 未获取到数据", color="warning"))
+                continue
+
+            # 3) 存放数据：本地无该K线类型文件则新建，
+            #    已有则替换重叠日期、追加新增日期
+            ok = storage.update_data(
+                new_data=df,
+                symbol=sym,
+                data_type=data_type,
+                source=source,
+            )
+            if not ok:
+                results.append(dbc.Alert(f"{sym}: 数据保存失败", color="danger"))
+                continue
+            results.append(dbc.Alert(
+                f"{sym}: 下载成功，本次获取 {len(df)} 条", color="success"))
+        except Exception as e:
+            results.append(dbc.Alert(f"{sym}: 下载失败 - {e}", color="danger"))
+
+    return html.Div(results)
 
 
 def init_data_sources(config=None):
@@ -205,10 +293,25 @@ def init_data_sources(config=None):
     print("数据源初始化完成")
 
 
-def start_server(host='0.0.0.0', port=8050, debug=True):
+def start_server(host='::', port=8050, debug=True):
     """启动服务器"""
-    init_data_sources() 
-    print(f"\n🚀 服务器启动中: http://{host}:{port}")
+    init_data_sources()
+
+    # Windows 默认对 IPv6 socket 启用 IPV6_V6ONLY，导致绑定 '::' 时仅监听
+    # IPv6，IPv4 请求无法连接。此处 monkey-patch server_bind 以关闭该
+    # 选项，实现 IPv4/IPv6 双栈监听。
+    from werkzeug.serving import BaseWSGIServer
+
+    _orig_server_bind = BaseWSGIServer.server_bind
+
+    def _dualstack_server_bind(self):
+        if self.address_family == socket.AF_INET6:
+            self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        _orig_server_bind(self)
+
+    BaseWSGIServer.server_bind = _dualstack_server_bind
+
+    print(f"\n🚀 服务器启动中: http://[::]:{port} (IPv4/IPv6 双栈)")
     print("按 Ctrl+C 停止服务器\n")
     app.run(host=host, port=port, debug=debug)
 

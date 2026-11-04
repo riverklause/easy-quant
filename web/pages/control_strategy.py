@@ -6,11 +6,11 @@
 from dash import html, dcc, callback, Input, Output, State
 import dash_bootstrap_components as dbc
 import pandas as pd
-from pathlib import Path
 
-DATA_DIR = Path("data")
+from data.storage.local_storage import LocalStorageManager
 
-SCREENER_CONFIG_FILE = DATA_DIR / "ScreenerConfig.parquet"
+# 元数据路径统一由 LocalStorageManager 决定：data/meta/{name}.parquet
+SCREENER_CONFIG_FILE = LocalStorageManager().build_meta_path("ScreenerConfig")
 
 
 def get_screener_configs():

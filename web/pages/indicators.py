@@ -6,12 +6,13 @@ K线图 + 指标选择器
 from dash import html, dcc, callback, Input, Output, State
 import dash_bootstrap_components as dbc
 import pandas as pd
-from pathlib import Path
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-DATA_DIR = Path("data")
-HISTORICAL_DIR = DATA_DIR / "historical_daily"
+from data.storage.local_storage import LocalStorageManager, HISTORICAL_DIR_NAME
+
+# 历史K线路径统一由 LocalStorageManager 决定：data/historical/{source}/{symbol}_{period}.parquet
+_storage = LocalStorageManager()
 
 AVAILABLE_INDICATORS = [
     {'label': 'SMA', 'value': 'sma'},
@@ -30,31 +31,23 @@ AVAILABLE_INDICATORS = [
 def get_available_symbols():
     """获取可用的股票代码"""
     symbols = []
-    if HISTORICAL_DIR.exists():
-        for source_dir in HISTORICAL_DIR.iterdir():
-            if source_dir.is_dir():
-                for f in source_dir.glob("*.parquet"):
-                    name = f.stem
-                    parts = name.split('_')
-                    if parts:
-                        code = parts[0].replace('_', '.')
-                        if code not in symbols:
-                            symbols.append(code)
+    for f in _storage.get_data_files(data_type=HISTORICAL_DIR_NAME):
+        # 文件名为 {symbol}_{period}.parquet，去掉末尾周期即股票代码
+        code = f.stem.rsplit('_', 1)[0].replace('_', '.')
+        if code and code not in symbols:
+            symbols.append(code)
     return [{'label': s, 'value': s} for s in symbols]
 
 
-def load_kline_data(symbol, source='yfinance'):
+def load_kline_data(symbol, source='yfinance', period='daily'):
     """加载K线数据"""
-    symbol_safe = symbol.replace('.', '_')
-    file_path = HISTORICAL_DIR / source / f"{symbol_safe}_historical_daily_*.parquet"
-
-    for f in HISTORICAL_DIR.glob(f"{source}/*.parquet"):
-        if symbol_safe in f.stem:
-            try:
-                df = pd.read_parquet(f)
-                return df
-            except:
-                pass
+    file_path = _storage.build_path(
+        HISTORICAL_DIR_NAME, symbol=symbol, source=source, period=period)
+    if file_path.exists():
+        try:
+            return pd.read_parquet(file_path)
+        except Exception:
+            pass
     return pd.DataFrame()
 
 

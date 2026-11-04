@@ -14,6 +14,26 @@ from utils.settings import settings
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# 数据布局（读写路径规则的唯一来源）：
+#   data/meta/{name}.parquet                                根目录元数据（股票列表、配置、状态等）
+#   data/historical/{source}/{symbol}_{period}.parquet       历史K线（扁平、无日期区间）
+#   data/realtime/{kind}/{source}/{symbol}_{kind}_{start}_{end}.parquet
+#   data/screener/{source}/{symbol}_{period}_{start}_{end}.parquet
+#   data/backtest/{source}/{symbol}_{period}_{start}_{end}.parquet
+META_DIR_NAME = 'meta'
+HISTORICAL_DIR_NAME = 'historical'
+REALTIME_DIR_NAME = 'realtime'
+SCREENER_DIR_NAME = 'screener'
+BACKTEST_DIR_NAME = 'backtest'
+CATEGORY_DIRS = (
+    HISTORICAL_DIR_NAME,
+    REALTIME_DIR_NAME,
+    SCREENER_DIR_NAME,
+    BACKTEST_DIR_NAME,
+)
+DEFAULT_HISTORICAL_PERIOD = 'daily'
+
+
 class LocalStorageManager:
     """
     本地数据存储管理器 - 实现数据的持久化存储和读取
@@ -52,6 +72,78 @@ class LocalStorageManager:
         """确保存储目录存在"""
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        (self.data_dir / META_DIR_NAME).mkdir(parents=True, exist_ok=True)
+
+    def build_meta_path(self, name: str, format: Optional[str] = None) -> Path:
+        """
+        构建根目录元数据文件路径（单一事实来源）：data/meta/{name}.{format}
+
+        Args:
+            name: 元数据名称，如 'StockList'、'ScreenerConfig'
+            format: 存储格式，默认使用管理器格式
+
+        Returns:
+            元数据文件路径
+        """
+        fmt = format or self.storage_format
+        return self.data_dir / META_DIR_NAME / f"{name}.{fmt}"
+
+    def _parse_data_type(self, data_type: str):
+        """
+        将 data_type 拆分为 (category, period)
+
+        例: 'historical_daily' -> ('historical', 'daily')
+            'realtime_quote'   -> ('realtime', 'quote')
+            'historical'       -> ('historical', None)
+        """
+        parts = str(data_type).split('_', 1)
+        category = parts[0]
+        period = parts[1] if len(parts) > 1 and parts[1] else None
+        return category, period
+
+    def build_path(self,
+                   category: str,
+                   symbol: Optional[str] = None,
+                   source: str = 'unknown',
+                   period: Optional[str] = None,
+                   start_date: Optional[str] = None,
+                   end_date: Optional[str] = None,
+                   format: Optional[str] = None) -> Path:
+        """
+        按数据布局构建数据文件路径（所有读写路径规则的唯一来源）
+
+        Args:
+            category: 数据类别 ('historical' / 'realtime' / 'screener' / 'backtest')
+            symbol: 股票代码
+            source: 数据源
+            period: 周期/类型（历史K线为周期，实时为数据类型）
+            start_date: 开始日期（历史K线忽略，文件名不含日期区间）
+            end_date: 结束日期
+            format: 存储格式
+
+        Returns:
+            文件路径
+        """
+        fmt = format or self.storage_format
+        safe_symbol = str(symbol if symbol else 'ALL').replace('.', '_')
+        source = source or 'unknown'
+
+        if category == HISTORICAL_DIR_NAME:
+            period = period or DEFAULT_HISTORICAL_PERIOD
+            return self.data_dir / HISTORICAL_DIR_NAME / source / f"{safe_symbol}_{period}.{fmt}"
+
+        if category == REALTIME_DIR_NAME:
+            kind = period or 'realtime'
+            if start_date and end_date:
+                filename = f"{safe_symbol}_realtime_{kind}_{start_date}_{end_date}.{fmt}"
+            else:
+                filename = f"{safe_symbol}_realtime_{kind}.{fmt}"
+            return self.data_dir / REALTIME_DIR_NAME / kind / source / filename
+
+        # screener / backtest 以及其他类别：data/{category}/{source}/{name}.{fmt}
+        name_parts = [safe_symbol, period, start_date, end_date]
+        filename = '_'.join(str(p) for p in name_parts if p) + f".{fmt}"
+        return self.data_dir / category / source / filename
     
     def save_data(self, 
                  data: pd.DataFrame,
@@ -300,7 +392,8 @@ class LocalStorageManager:
                 merged = pd.merge(existing_data, new_data, on=on_columns, how='outer')
             
             # 按索引排序
-            if merged.index.name == 'time_key' or merged.index.name == 'datetime':
+            index_names = merged.index.names if isinstance(merged.index, pd.MultiIndex) else [merged.index.name]
+            if any(name in ('time_key', 'datetime') for name in index_names if name):
                 merged = merged.sort_index()
             
             return merged
@@ -431,20 +524,19 @@ class LocalStorageManager:
             
         Returns:
             文件路径
+
+        说明：保留 data_type 入参以兼容既有调用，实际路径规则统一由 build_path 决定。
         """
-        # 移除特殊字符，确保路径安全
-        safe_symbol = symbol.replace('.', '_')
-        
-        # 构建文件名
-        if start_date and end_date:
-            filename = f"{safe_symbol}_{data_type}_{start_date}_{end_date}_{source}.{format}"
-        else:
-            filename = f"{safe_symbol}_{data_type}_{source}.{format}"
-        
-        # 构建完整路径
-        file_path = self.data_dir / data_type / source / filename
-        
-        return file_path
+        category, period = self._parse_data_type(data_type)
+        return self.build_path(
+            category=category,
+            symbol=symbol,
+            source=source,
+            period=period,
+            start_date=start_date,
+            end_date=end_date,
+            format=format,
+        )
     
     def get_data_files(self, 
                       symbol: Optional[str] = None,
@@ -464,32 +556,33 @@ class LocalStorageManager:
             符合条件的文件路径列表
         """
         try:
-            # 构建搜索模式
-            pattern = "*"
-            
-            if symbol:
-                safe_symbol = symbol.replace('.', '_')
-                pattern = f"{safe_symbol}_{pattern}"
-            
+            fmt = format or self.storage_format
+            safe_symbol = symbol.replace('.', '_') if symbol else None
+
+            # 依据 data_type 确定搜索根目录（类别/实时类型）
             if data_type:
-                pattern = f"{pattern}_{data_type}_{pattern}"
-            
-            if source:
-                pattern = f"{pattern}_{source}"
-            
-            if format:
-                pattern = f"{pattern}.{format}"
+                category, period = self._parse_data_type(data_type)
+                if category == REALTIME_DIR_NAME and period:
+                    root = self.data_dir / REALTIME_DIR_NAME / period
+                else:
+                    root = self.data_dir / category
             else:
-                pattern = f"{pattern}.*"
-            
-            # 搜索文件
+                root = self.data_dir
+
+            if not root.exists():
+                return []
+
             data_files = []
-            for root, dirs, files in os.walk(self.data_dir):
-                for file in files:
-                    if file.startswith(symbol.replace('.', '_')) if symbol else True:
-                        file_path = Path(root) / file
-                        data_files.append(file_path)
-            
+            for file_path in root.rglob(f"*.{fmt}"):
+                # 排除元数据目录
+                if META_DIR_NAME in file_path.relative_to(self.data_dir).parts:
+                    continue
+                if safe_symbol and not file_path.name.startswith(safe_symbol):
+                    continue
+                if source and source not in file_path.relative_to(self.data_dir).parts:
+                    continue
+                data_files.append(file_path)
+
             return data_files
         except Exception as e:
             logger.error(f"获取数据文件列表失败: {e}")
@@ -507,18 +600,18 @@ class LocalStorageManager:
             数据文件信息
         """
         try:
-            # 提取文件名信息
-            filename = file_path.stem
-            parts = filename.split('_')
-            
+            # 依据相对路径解析类别/数据源（路径规则见模块顶部说明）
+            rel_parts = file_path.relative_to(self.data_dir).parts
+            category = rel_parts[0] if len(rel_parts) > 1 else 'root'
+            source = rel_parts[-2] if len(rel_parts) >= 3 else 'unknown'
+
             info = {
                 'file_path': str(file_path),
                 'file_size': file_path.stat().st_size,
                 'last_modified': datetime.fromtimestamp(file_path.stat().st_mtime),
                 'format': file_path.suffix[1:],
-                'symbol': parts[0].replace('_', '.'),
-                'data_type': parts[1] if len(parts) > 1 else 'unknown',
-                'source': parts[-1] if len(parts) > 2 else 'unknown'
+                'category': category,
+                'source': source,
             }
             
             return info
@@ -567,7 +660,7 @@ class LocalStorageManager:
         try:
             total_size = 0
             file_count = 0
-            data_types = {}
+            categories = {}
             sources = {}
             
             for file_path in self.get_data_files():
@@ -575,19 +668,19 @@ class LocalStorageManager:
                 total_size += file_size
                 file_count += 1
                 
-                # 提取数据类型和数据源信息
+                # 提取类别和数据源信息
                 info = self.get_data_info(file_path)
-                data_type = info.get('data_type', 'unknown')
+                category = info.get('category', 'unknown')
                 source = info.get('source', 'unknown')
                 
                 # 更新统计信息
-                data_types[data_type] = data_types.get(data_type, 0) + 1
+                categories[category] = categories.get(category, 0) + 1
                 sources[source] = sources.get(source, 0) + 1
             
             stats = {
                 'total_size': total_size,
                 'file_count': file_count,
-                'data_types': data_types,
+                'categories': categories,
                 'sources': sources,
                 'data_dir': str(self.data_dir)
             }

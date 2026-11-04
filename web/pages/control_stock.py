@@ -6,14 +6,15 @@
 from dash import html, dcc, callback, Input, Output, State
 import dash_bootstrap_components as dbc
 import pandas as pd
-from pathlib import Path
 from datetime import datetime
 
-DATA_DIR = Path("data")
+from data.storage.local_storage import LocalStorageManager
 
-STOCK_LIST_FILE = DATA_DIR / "StockList.parquet"
-STOCK_BASIC_INFO_FILE = DATA_DIR / "StockBasicInfo.parquet"
-STOCK_BASIC_FILTERED_FILE = DATA_DIR / 'StockBasicFiltered.parquet'
+# 元数据路径统一由 LocalStorageManager 决定：data/meta/{name}.parquet
+_storage = LocalStorageManager()
+STOCK_LIST_FILE = _storage.build_meta_path("StockList")
+STOCK_BASIC_INFO_FILE = _storage.build_meta_path("StockBasicInfo")
+STOCK_BASIC_FILTERED_FILE = _storage.build_meta_path("StockBasicFiltered")
 
 
 def get_stock_list_display():
@@ -249,8 +250,8 @@ layout = html.Div([
                 dbc.CardBody([
                     dbc.Row([
                         dbc.Col([
-                            html.Label("股票代码（逗号分隔）"),
-                            dcc.Input(id="download-symbols", type="text", placeholder="如: 00700,00001", className="form-control"),
+                            html.Label("股票代码（逗号分隔，留空则下载关注列表全部股票）"),
+                            dcc.Input(id="download-symbols", type="text", placeholder="如: HK.00700,US.AAPL", className="form-control"),
                         ], width=6),
                         dbc.Col([
                             html.Label("数据源"),
@@ -268,6 +269,7 @@ layout = html.Div([
                             dbc.Select(
                                 id="download-period",
                                 options=[
+                                    {"label": "5分钟", "value": "5min"},
                                     {"label": "日线", "value": "daily"},
                                     {"label": "周线", "value": "weekly"},
                                     {"label": "月线", "value": "monthly"},
@@ -289,7 +291,16 @@ layout = html.Div([
                     ]),
                     html.Hr(),
                     dbc.Button("开始下载", id="download-btn", color="primary"),
-                    html.Div(id="download-progress"),
+                    dcc.Loading(
+                        id="download-loading",
+                        type="default",
+                        color="#0d6efd",
+                        custom_spinner=html.Div([
+                            html.Div(className="spinner-border spinner-border-sm text-primary"),
+                            html.Span("开始下载，请稍候……", className="ms-2"),
+                        ], className="d-flex align-items-center"),
+                        children=html.Div(id="download-progress", className="mt-2"),
+                    ),
                 ])
             ], className="mb-3")
         ])

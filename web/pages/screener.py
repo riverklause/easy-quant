@@ -6,22 +6,22 @@
 from dash import html, dcc, callback, Input, Output, State
 import dash_bootstrap_components as dbc
 import pandas as pd
-from pathlib import Path
 
-DATA_DIR = Path("data")
-SCREENER_RESULT_DIR = DATA_DIR / "screener_results"
+from data.storage.local_storage import LocalStorageManager, SCREENER_DIR_NAME
+
+# 选股结果路径统一由 LocalStorageManager 决定：data/screener/{source}/...
+_storage = LocalStorageManager()
 
 
 def get_screener_results():
     """获取选股结果列表"""
     results = []
-    if SCREENER_RESULT_DIR.exists():
-        for f in SCREENER_RESULT_DIR.glob("*.parquet"):
-            results.append({
-                'name': f.stem,
-                'path': str(f),
-                'modified': pd.Timestamp(f.stat().st_mtime, unit='s')
-            })
+    for f in _storage.get_data_files(data_type=SCREENER_DIR_NAME):
+        results.append({
+            'name': f.stem,
+            'path': str(f),
+            'modified': pd.Timestamp(f.stat().st_mtime, unit='s')
+        })
     return sorted(results, key=lambda x: x['modified'], reverse=True)
 
 

@@ -1,6 +1,7 @@
 # tests/
 
-当前只有 `test_lamps.py` 与 `test_datafeed_frequency.py` 可在 pytest 下运行。
+`test_lamps.py`、`test_realtime_lamps.py`、`test_indicator_contracts.py`、
+`test_datafeed_frequency.py`、`test_storage_layout.py` 可在 pytest 下运行。
 其余历史脚本已移至 `scratch/legacy_scripts/`。
 
 ## 灯与回退矩阵
@@ -32,6 +33,7 @@
 | R3 | 任务异常退出无留痕（保护性灯） | 去掉 `_on_realtime_task_done` 的赋值 → `stopped_reason` 为空 | ✓ |
 | T1 | 技术指标回显输入列（13 个指标） | 只回退 RSI → 仅 `T1[RSI]` 红，其余 14 个通过 | ✓ |
 | T2 | 基本面输出键与声明不符（保护性灯） | 当前即绿 | ✓ |
+| LS1 | 存储路径退化成扁平布局 | 回退 `build_path`/`build_meta_path` → 3 个 LS1 全红，其余 40 个通过 | ✓ |
 
 R1 之后，L4b / L4b2 的绿依赖 L4c 的声明式装配；本表记录的是各自独立修复时的回退结果。
 
