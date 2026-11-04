@@ -1,5 +1,9 @@
 utils/settings.py
 
+# 虚拟环境
+.venv/
+venv/
+
 # 缓存与编译产物
 __pycache__/
 *.py[cod]

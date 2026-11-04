@@ -133,13 +133,13 @@ class BacktestEngine:
         for strategy in self.strategies:
             strategy.reset_stats()
         
-        print(f"开始回测: {start_date} ~ {end_date}")
-        print(f"初始资金: {self.initial_capital:,.2f}")
+        logger.info("开始回测: %s ~ %s", start_date, end_date)
+        logger.info("初始资金: %s", f"{self.initial_capital:,.2f}")
         
         self._data = self._load_data(symbols, start_date, end_date, frequency)
         
         if not self._data:
-            print("没有加载到数据，回测终止")
+            logger.warning("没有加载到数据，回测终止")
             return self._create_empty_result(start_date, end_date)
         
         trading_dates = self._get_trading_dates()
@@ -173,7 +173,7 @@ class BacktestEngine:
         
         self._is_running = False
         
-        print(f"回测完成")
+        logger.info("回测完成")
         
         return self._results
     
@@ -254,7 +254,7 @@ class BacktestEngine:
     def stop(self):
         """停止回测"""
         self._is_running = False
-        print("回测已停止")
+        logger.info("回测已停止")
     
     def _load_data(self, 
                    symbols: Optional[List[str]], 
