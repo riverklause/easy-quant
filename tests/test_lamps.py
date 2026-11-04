@@ -19,6 +19,7 @@ from backtest.engine.backtest_engine import BacktestEngine, IndicatorCalculation
 from backtest.engine.portfolio import Portfolio
 from backtest.engine.position_sizer import FixedFractionSizer
 from backtest.datafeed.historical_datafeed import HistoricalDataFeed
+from backtest.results.result_store import BacktestResult
 from indicators.base.calculator import IndicatorCalculator
 from indicators.base.registry import IndicatorRegistry
 from strategy.indicator_assembly import ensure_indicators
@@ -333,6 +334,29 @@ def test_E3_default_feed_is_declared_as_mock():
     result = engine.run("2024-01-01", "2024-03-01", symbols=["X"])
 
     assert result.data_source == "mock"
+
+
+def test_E4_saved_result_keeps_provenance(tmp_path):
+    """E4 落盘自证：存盘再读回，执行失败计数与数据来源必须逐字段不变。
+
+    否则一个 mock 跑出来的结果文件永远无法证明自己是 mock 跑的，
+    M2 的“结果自报来源”就只活在内存里。
+    """
+    original = BacktestResult(
+        strategy_name="e4",
+        start_date="2024-01-01",
+        end_date="2024-02-01",
+        initial_capital=1_000_000,
+        execution_failures={"signals": 1, "strategies": 2, "indicators": 3},
+        data_source="mock",
+    )
+    path = tmp_path / "result.json"
+
+    original.save_to_file(str(path))
+    loaded = BacktestResult.load_from_file(str(path))
+
+    assert loaded.execution_failures == {"signals": 1, "strategies": 2, "indicators": 3}
+    assert loaded.data_source == "mock"
 
 
 def test_F2_allow_mock_false_fails_closed():
