@@ -13,6 +13,7 @@ from indicators.base.registry import IndicatorRegistry
 from strategy.base_strategy import BaseStrategy
 from strategy.technical_strategy import TechnicalStrategy
 from strategy.indicator_spec import indicator_ids
+from strategy.indicator_assembly import ensure_indicators
 from strategy.multi_factor.multi_factor_strategy import MultiFactorStrategy
 
 
@@ -101,6 +102,9 @@ class StrategyExecutor:
             if calculate_indicators:
                 # 获取策略所需指标
                 required_indicators = self.get_required_indicators(strategy)
+                ensure_indicators(
+                    self.registry, self.calculator, strategy.get_required_indicators()
+                )
                 
                 # 使用calculator批量计算指标（calculator负责缓存）
                 indicators_data = self.calculator.batch_calculate(
@@ -177,6 +181,9 @@ class StrategyExecutor:
         for strategy_id, strategy in strategies.items():
             # 获取策略所需指标
             required_indicators = self.get_required_indicators(strategy)
+            ensure_indicators(
+                self.registry, self.calculator, strategy.get_required_indicators()
+            )
             
             if not required_indicators:
                 print(f"⚠️ 策略 '{strategy_id}' 不需要指标，跳过")

@@ -17,8 +17,10 @@ from backtest.analyzers.risk import RiskAnalyzer
 from backtest.analyzers.trade_analyzer import TradeAnalyzer
 from backtest.results.result_store import BacktestResult
 from indicators.base.calculator import IndicatorCalculator
+from indicators.base.registry import IndicatorRegistry
 
 from strategy.base_strategy import BaseStrategy
+from strategy.indicator_assembly import ensure_indicators
 from strategy.indicator_spec import indicator_ids
 from strategy.technical_strategy import TechnicalStrategy
 from strategy.multi_factor.multi_factor_strategy import MultiFactorStrategy
@@ -40,7 +42,8 @@ class BacktestEngine:
                  initial_capital: float = 1000000,
                  commission_rate: float = 0.001,
                  slippage: float = 0.0,
-                 risk_free_rate: float = 0.03):
+                 risk_free_rate: float = 0.03,
+                 indicator_registry: IndicatorRegistry = None):
         """
         初始化回测引擎
         
@@ -71,6 +74,9 @@ class BacktestEngine:
         self.trade_analyzer = TradeAnalyzer()
         
         self.indicator_calculator = IndicatorCalculator()
+        self.indicator_registry = indicator_registry or IndicatorRegistry()
+        if indicator_registry is None:
+            self.indicator_registry.load_indicators_from_package('indicators.technical')
         
         self.initial_capital = initial_capital
         self.risk_free_rate = risk_free_rate
@@ -114,6 +120,9 @@ class BacktestEngine:
         """
         self._is_running = True
         self.portfolio.reset()
+        self.failed_signals = 0
+        for strategy in self.strategies:
+            strategy.reset_stats()
         
         print(f"开始回测: {start_date} ~ {end_date}")
         print(f"初始资金: {self.initial_capital:,.2f}")
@@ -201,6 +210,9 @@ class BacktestEngine:
         """异步回测实现"""
         self._is_running = True
         self.portfolio.reset()
+        self.failed_signals = 0
+        for strategy in self.strategies:
+            strategy.reset_stats()
         
         self._data = await self.datafeed.get_data(symbols, start_date, end_date, frequency)
         
@@ -375,6 +387,7 @@ class BacktestEngine:
             
             try:
                 required = strategy.get_required_indicators()
+                ensure_indicators(self.indicator_registry, self.indicator_calculator, required)
                 if required:
                     required_ids = indicator_ids(required)
                     batch = self.indicator_calculator.batch_calculate(

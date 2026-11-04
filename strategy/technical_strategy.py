@@ -43,6 +43,11 @@ class TechnicalStrategy(BaseStrategy):
         self.signal_errors = 0
         self.last_signal_error: Optional[Exception] = None
     
+    def reset_stats(self):
+        """复位信号生成统计。"""
+        self.signal_errors = 0
+        self.last_signal_error = None
+    
     def initialize(self, **kwargs):
         """
         初始化策略

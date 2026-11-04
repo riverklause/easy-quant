@@ -48,6 +48,9 @@ class BaseStrategy(ABC):
             'total_loss': 0.0
         }
     
+    def reset_stats(self):
+        """复位执行期统计（策略实例可跨多次回测复用）。"""
+    
     @abstractmethod
     def initialize(self, **kwargs):
         """
