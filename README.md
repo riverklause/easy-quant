@@ -51,7 +51,7 @@
 - 交易分析器实现（TradeAnalyzer）
 - 回测结果存储（BacktestResult）
 - 支持多策略回测和异步执行
-- 支持基准对比和调仓策略
+- 支持基准对比
 
 **第六阶段：可视化与监控 - 规划中 ⏳**
 - 数据可视化界面（规划中）
@@ -185,16 +185,28 @@ python -m pytest tests -q
 
 注意：`.venv/` 不进版本库，克隆后是空的；先装依赖再跑测试，不要拿另一个全局解释器混跑。
 
-2. **基本使用**
+2. **生成本机配置**
+
+`utils/settings.py` 含本机代理与 Futu 凭据，不入库。新克隆后先从示例复制一份再填：
+
+```powershell
+copy utils\settings.example.py utils\settings.py
+```
+
+```bash
+cp utils/settings.example.py utils/settings.py
+```
+
+Futu 相关字段留空也能跑回测与 yfinance 数据源。
+
+3. **基本使用**
 ```python
 import asyncio
 from data.data_manager import DataManager
-from utils.settings import get_data_config
 
 async def main():
-    # 创建数据管理器
-    config = get_data_config()
-    data_manager = DataManager(config)
+    # 创建数据管理器（默认读取 utils/settings.py）
+    data_manager = DataManager()
     
     # 连接所有数据源
     data_manager.connect_all()
@@ -208,17 +220,18 @@ async def main():
         symbol='00700',
         start_date='2023-01-01',
         end_date='2023-01-31',
+        data_source='yfinance',
         period='daily'
     )
     
     # 订阅实时数据
-    data_manager.subscribe_realtime_data(['00700', '00001'], ['kline', 'quote'])
+    data_manager.subscribe_realtime_data('futu_RT', ['00700', '00001'], ['kline', 'quote'])
     
     # 添加实时数据回调
     def realtime_callback(data):
         print(f"收到实时数据: {data}")
     
-    data_manager.add_realtime_callback(realtime_callback)
+    data_manager.add_realtime_callback('futu_RT', realtime_callback)
     
     # 断开连接
     data_manager.disconnect_all()
@@ -400,7 +413,7 @@ python examples/demo_unified_strategy.py
 - [x] **结果存储**：`BacktestResult`结果管理
 - [x] **异步执行**：支持异步回测
 - [x] **多策略支持**：支持策略组合回测
-- [x] **调仓策略**：支持定期调仓
+- [ ] **调仓策略**：引擎级 `rebalance_dates` 尚未实现；需要定期调仓时由策略自身负责（见 `MultiFactorStrategy` 的 `rebalance_frequency`）
 - [x] **基准对比**：支持基准收益率对比
 
 ### ⏳ 第六阶段：可视化与监控（规划中）
