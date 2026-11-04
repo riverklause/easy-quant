@@ -16,6 +16,7 @@ from backtest.analyzers.performance import PerformanceAnalyzer
 from backtest.analyzers.risk import RiskAnalyzer
 from backtest.analyzers.trade_analyzer import TradeAnalyzer
 from backtest.results.result_store import BacktestResult
+from indicators.base.calculator import IndicatorCalculator
 
 from strategy.base_strategy import BaseStrategy
 from strategy.technical_strategy import TechnicalStrategy
@@ -67,6 +68,8 @@ class BacktestEngine:
         self.performance_analyzer = PerformanceAnalyzer(risk_free_rate=risk_free_rate)
         self.risk_analyzer = RiskAnalyzer()
         self.trade_analyzer = TradeAnalyzer()
+        
+        self.indicator_calculator = IndicatorCalculator()
         
         self.initial_capital = initial_capital
         self.risk_free_rate = risk_free_rate
@@ -248,7 +251,9 @@ class BacktestEngine:
         if symbols is None:
             symbols = self._get_strategy_symbols()
         
-        return self.datafeed._generate_mock_data(symbols, start_date, end_date, frequency)
+        return asyncio.run(
+            self.datafeed.get_data(symbols, start_date, end_date, frequency)
+        )
     
     def _get_strategy_symbols(self) -> List[str]:
         """获取策略所需的股票代码"""
@@ -368,13 +373,24 @@ class BacktestEngine:
                 continue
             
             try:
-                signal = strategy.generate_signals(current_date_data)
+                required = strategy.get_required_indicators()
+                if required:
+                    batch = self.indicator_calculator.batch_calculate(
+                        current_date_data, required, use_cache=False
+                    )
+                    indicators_data = next(iter(batch.values()), {})
+                else:
+                    indicators_data = current_date_data
                 
-                if signal:
+                raw = strategy.generate_signals(indicators_data) or []
+                if isinstance(raw, dict):
+                    raw = [raw]
+                
+                for sig in raw:
                     signals.append({
                         'symbol': symbol,
                         'price': price,
-                        'signal': signal,
+                        'signal': sig,
                         'strategy': strategy.name
                     })
                     
