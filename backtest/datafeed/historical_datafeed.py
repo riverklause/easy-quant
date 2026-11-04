@@ -165,7 +165,7 @@ class HistoricalDataFeed(BaseDataFeed):
         elif frequency == 'weekly':
             dates = pd.date_range(start=start, end=end, freq='W')
         elif frequency == 'monthly':
-            dates = pd.date_range(start=start, end=end, freq='M')
+            dates = pd.date_range(start=start, end=end, freq='ME')
         else:
             dates = pd.date_range(start=start, end=end, freq='B')
         
