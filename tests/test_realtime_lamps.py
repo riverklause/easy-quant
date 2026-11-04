@@ -67,3 +67,19 @@ def test_R1_failed_symbol_never_reaches_strategy():
     assert failed == {"A"}
     assert executor.realtime_stats["indicator_errors"] == 1
     assert strategy.seen == {"B"}, "A 的陈旧指标被拿去出信号了"
+
+
+def test_R2_circuit_breaker_stops_after_consecutive_failures():
+    executor = StrategyExecutor(calculator=_FakeCalculator(bad_symbols={"A"}))
+    executor.max_consecutive_failures = 2
+    executor._realtime_interval = 0
+    executor._realtime_running = True
+
+    asyncio.run(asyncio.wait_for(
+        executor._realtime_loop(_DataManager(["A"]), ["A"], {"s": _Recorder()}),
+        timeout=5,
+    ))
+
+    assert executor.realtime_stats["ticks"] == 2, "熔断没有在连续失败后停止"
+    assert executor.is_realtime_running() is False
+    assert "连续" in (executor.realtime_stats["stopped_reason"] or "")
