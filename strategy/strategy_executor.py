@@ -443,6 +443,7 @@ class StrategyExecutor:
                 
         except asyncio.CancelledError:
             logger.info("实时模式任务已取消")
+            raise
         finally:
             self._realtime_running = False
             self._realtime_task = None
