@@ -249,6 +249,16 @@ def test_L4c2_indicator_failure_is_loud():
     assert engine.indicator_errors == 1
 
 
+class _SignalEveryBar(TechnicalStrategy):
+    """每根 bar 都给一条 BUY，用于端到端计数灯。"""
+
+    def __init__(self):
+        super().__init__("e1")
+
+    def generate_signals(self, indicators_data, **kwargs):
+        return [{"type": "BUY"}]
+
+
 class _SpyFeed(HistoricalDataFeed):
     """L4a fixture：只记录引擎是否把取数委托给 datafeed。"""
 
@@ -259,6 +269,38 @@ class _SpyFeed(HistoricalDataFeed):
     async def get_data(self, symbols, start_date, end_date, frequency="daily"):
         self.calls += 1
         return {"X": _deterministic_bars()}
+
+
+def test_E1_failures_are_reported_and_reset():
+    """E1 失败计数必须挂到结果上，且每次 run 归零。"""
+    engine = BacktestEngine(
+        strategy=_SignalEveryBar(),
+        datafeed=_SpyFeed(),
+        initial_capital=1_000_000,
+    )
+
+    # 每轮第一次处理信号时故意抛一次
+    state = {"raised": False}
+    real = engine._process_signal
+
+    def flaky(sig, date, prices):
+        if not state["raised"]:
+            state["raised"] = True
+            raise RuntimeError("boom")
+        return real(sig, date, prices)
+
+    engine._process_signal = flaky
+
+    first = engine.run("2024-01-01", "2024-03-01", symbols=["X"])
+    assert first.execution_failures == {
+        "signals": 1,
+        "strategies": 0,
+        "indicators": 0,
+    }
+
+    state["raised"] = False
+    second = engine.run("2024-01-01", "2024-03-01", symbols=["X"])
+    assert second.execution_failures["signals"] == 1, "计数器跨 run 累加了"
 
 
 def test_L4a_engine_delegates_loading_to_datafeed():

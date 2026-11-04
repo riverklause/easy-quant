@@ -36,6 +36,9 @@ class BacktestResult:
     
     config: Dict = field(default_factory=dict)
     
+    execution_failures: Dict = field(default_factory=dict)
+    data_source: str = ""
+    
     def __post_init__(self):
         if self.equity_curve is None:
             self.equity_curve = pd.DataFrame()
