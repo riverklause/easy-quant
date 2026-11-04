@@ -172,10 +172,18 @@ easy-quant/
 
 ### 快速开始
 
-1. **安装依赖**
+1. **准备环境并安装依赖**
+
+当前验证通过的组合是 Python 3.14 / pandas 3.0 / pytest 9.1。`requirements.txt` 只给了下限、没有锁定版本，所以请固定使用一个解释器（下面的 `.venv`）：
+
 ```bash
+python -m venv .venv
+.venv\Scripts\activate      # Windows；macOS/Linux 用 source .venv/bin/activate
 pip install -r requirements.txt
+python -m pytest tests -q
 ```
+
+注意：`.venv/` 不进版本库，克隆后是空的；先装依赖再跑测试，不要拿另一个全局解释器混跑。
 
 2. **基本使用**
 ```python

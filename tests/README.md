@@ -31,11 +31,14 @@
 | R4 | 取消被吞，`task.cancelled()` 永为 False | 去掉 `raise` → `DID NOT RAISE CancelledError` | ✓ |
 | R4b | 用户取消后 `stopped_reason` 为空 | 去掉赋值 → `None != "用户取消"` | ✓ |
 | R3 | 任务异常退出无留痕（保护性灯） | 去掉 `_on_realtime_task_done` 的赋值 → `stopped_reason` 为空 | ✓ |
-| T1 | 技术指标回显输入列（13 个指标） | 只回退 RSI → 仅 `T1[RSI]` 红，其余 14 个通过 | ✓ |
+| T1 | 技术指标回显输入列（14 个指标） | 只回退 RSI → 仅 `T1[RSI]` 红，其余 14 个通过 | ✓ |
 | T2 | 基本面输出键与声明不符（保护性灯） | 当前即绿 | ✓ |
-| LS1 | 存储路径退化成扁平布局 | 回退 `build_path`/`build_meta_path` → 3 个 LS1 全红，其余 40 个通过 | ✓ |
+| LS1 | 存储路径退化成扁平布局 | 回退 `build_path`/`build_meta_path` → 3 个 LS1 全红，其余全绿 | ✓ |
 | L6 / L6b | 仓位预算被硬编码、无法注入 | 回退成 `initial_capital * 0.1` → 只有 L6b 红（`10000 != 5000`），L6 仍绿 | ✓ |
 | L7 | 指标取 batch 第一个 key，拿错股票 | 回退成 `next(iter(...))` → 只有 L7 红（`11700.0 != 11.7`） | ✓ |
+| L8 | 每 bar 重算整个历史窗口（O(T²)） | 回退预计算 → 只有 L8 红（`775 != 40`），L8a 仍绿 | ✓ |
+| L8a | 预计算切片越界（看到未来 / 值不符） | 保护性灯（当前即绿） | ✓ |
+| L9 | ADX 条件取整行 Series 而非 `adx` 列 | 回退成 `result.iloc[-1]` → 只有 L9 红（Series 歧义布尔） | ✓ |
 
 R1 之后，L4b / L4b2 的绿依赖 L4c 的声明式装配；本表记录的是各自独立修复时的回退结果。
 
