@@ -303,6 +303,26 @@ def test_E1_failures_are_reported_and_reset():
     assert second.execution_failures["signals"] == 1, "计数器跨 run 累加了"
 
 
+def test_E2_result_reports_real_data_source():
+    """E2 真实 feed 的结果必须标出真实来源，而不是悄悄写成 mock。"""
+    engine = BacktestEngine(
+        strategy=_SignalEveryBar(),
+        datafeed=_SpyFeed(),
+        initial_capital=1_000_000,
+    )
+    result = engine.run("2024-01-01", "2024-03-01", symbols=["X"])
+
+    assert result.data_source == "_SpyFeed"
+
+
+def test_E3_default_feed_is_declared_as_mock():
+    """E3 默认 feed 回落 mock 时，结果对象必须自报 mock。"""
+    engine = BacktestEngine(strategy=_SignalEveryBar(), initial_capital=1_000_000)
+    result = engine.run("2024-01-01", "2024-03-01", symbols=["X"])
+
+    assert result.data_source == "mock"
+
+
 def test_L4a_engine_delegates_loading_to_datafeed():
     """L4a 取数委托：_load_data 必须走 datafeed，而不是自己造 mock。
 
