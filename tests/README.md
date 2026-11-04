@@ -30,6 +30,8 @@
 | R4 | 取消被吞，`task.cancelled()` 永为 False | 去掉 `raise` → `DID NOT RAISE CancelledError` | ✓ |
 | R4b | 用户取消后 `stopped_reason` 为空 | 去掉赋值 → `None != "用户取消"` | ✓ |
 | R3 | 任务异常退出无留痕（保护性灯） | 去掉 `_on_realtime_task_done` 的赋值 → `stopped_reason` 为空 | ✓ |
+| T1 | 技术指标回显输入列（13 个指标） | 只回退 RSI → 仅 `T1[RSI]` 红，其余 14 个通过 | ✓ |
+| T2 | 基本面输出键与声明不符（保护性灯） | 当前即绿 | ✓ |
 
 R1 之后，L4b / L4b2 的绿依赖 L4c 的声明式装配；本表记录的是各自独立修复时的回退结果。
 
