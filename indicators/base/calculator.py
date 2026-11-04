@@ -11,6 +11,7 @@ import numpy as np
 from datetime import datetime, timedelta
 import threading
 from .base_indicator import BaseIndicator
+from .errors import IndicatorCalculationError
 
 
 class IndicatorCalculator:
@@ -228,6 +229,15 @@ class IndicatorCalculator:
                             self._calculation_stats['cache_misses'] += 1
                         except Exception as e:
                             results[symbol][indicator_id] = {'error': str(e)}
+
+        errors = {
+            f"{symbol}.{indicator_id}": result["error"]
+            for symbol, group in results.items()
+            for indicator_id, result in group.items()
+            if isinstance(result, dict) and "error" in result
+        }
+        if errors:
+            raise IndicatorCalculationError(f"指标计算失败: {errors}")
 
         return results
 

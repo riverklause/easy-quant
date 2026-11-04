@@ -9,6 +9,7 @@ import asyncio
 from typing import Dict, List, Any, Optional
 import pandas as pd
 from indicators.base.calculator import IndicatorCalculator
+from indicators.base.errors import IndicatorCalculationError
 from indicators.base.registry import IndicatorRegistry
 from strategy.base_strategy import BaseStrategy
 from strategy.technical_strategy import TechnicalStrategy
@@ -123,6 +124,9 @@ class StrategyExecutor:
             self.execution_stats['successful_executions'] += 1
             return signals
             
+        except IndicatorCalculationError:
+            self.execution_stats['failed_executions'] += 1
+            raise
         except Exception as e:
             self.execution_stats['failed_executions'] += 1
             print(f"执行策略 '{strategy.name}' 失败: {e}")

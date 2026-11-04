@@ -20,6 +20,7 @@ from backtest.analyzers.risk import RiskAnalyzer
 from backtest.analyzers.trade_analyzer import TradeAnalyzer
 from backtest.results.result_store import BacktestResult
 from indicators.base.calculator import IndicatorCalculator
+from indicators.base.errors import IndicatorCalculationError
 from indicators.base.registry import IndicatorRegistry
 
 from strategy.base_strategy import BaseStrategy
@@ -27,10 +28,6 @@ from strategy.indicator_assembly import ensure_indicators
 from strategy.indicator_spec import indicator_ids
 from strategy.technical_strategy import TechnicalStrategy
 from strategy.multi_factor.multi_factor_strategy import MultiFactorStrategy
-
-
-class IndicatorCalculationError(RuntimeError):
-    """指标计算/装配失败：必须冒泡，不允许按股票或策略静默跳过。"""
 
 
 class BacktestEngine:
@@ -425,20 +422,14 @@ class BacktestEngine:
                 required = strategy.get_required_indicators()
                 if required:
                     required_ids = indicator_ids(required)
-                    batch = self.indicator_calculator.batch_calculate(
-                        current_date_data, required_ids, use_cache=False
-                    )
-                    indicators_data = next(iter(batch.values()), {})
-
-                    errors = {
-                        f"{sym}.{key}": value["error"]
-                        for sym, group in batch.items()
-                        for key, value in group.items()
-                        if isinstance(value, dict) and "error" in value
-                    }
-                    if errors:
+                    try:
+                        batch = self.indicator_calculator.batch_calculate(
+                            current_date_data, required_ids, use_cache=False
+                        )
+                    except IndicatorCalculationError:
                         self.indicator_errors += 1
-                        raise IndicatorCalculationError(f"指标计算失败: {errors}")
+                        raise
+                    indicators_data = next(iter(batch.values()), {})
                 else:
                     indicators_data = current_date_data
                 
