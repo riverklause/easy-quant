@@ -59,12 +59,8 @@ class HistoricalDataFeed(BaseDataFeed):
         self.data_manager = data_manager
         self.allow_mock = allow_mock
         self.used_mock = False
+        self.failed_symbols = 0
         self._cache: Dict[str, pd.DataFrame] = {}
-        self._frequency_map = {
-            'daily': '1d',
-            'weekly': '1w', 
-            'monthly': '1M'
-        }
     
     async def get_data(self, 
                        symbols: List[str], 
@@ -83,6 +79,8 @@ class HistoricalDataFeed(BaseDataFeed):
         Returns:
             股票数据字典
         """
+        self.failed_symbols = 0
+
         if self.data_manager is None:
             if not self.allow_mock:
                 raise ValueError("未配置 data_manager，且 allow_mock=False")
@@ -100,20 +98,21 @@ class HistoricalDataFeed(BaseDataFeed):
                 continue
             
             try:
-                freq = self._frequency_map.get(frequency, '1d')
                 data = await self.data_manager.get_historical_data(
                     symbol=symbol,
                     start_date=start_date,
                     end_date=end_date,
-                    data_source='yfinance'
+                    data_source='yfinance',
+                    period=frequency
                 )
                 
                 if data is not None and not data.empty:
                     result[symbol] = data
                     self._cache[cache_key] = data
                     
-            except Exception as e:
-                print(f"获取 {symbol} 数据失败: {e}")
+            except Exception:
+                self.failed_symbols += 1
+                logger.exception("获取 %s 数据失败", symbol)
                 continue
         
         return result
