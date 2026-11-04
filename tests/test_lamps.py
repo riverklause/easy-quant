@@ -18,7 +18,11 @@ import pytest
 from backtest.engine.backtest_engine import BacktestEngine, IndicatorCalculationError
 from backtest.engine.portfolio import Portfolio
 from backtest.datafeed.historical_datafeed import HistoricalDataFeed
+from indicators.base.calculator import IndicatorCalculator
+from indicators.base.registry import IndicatorRegistry
+from strategy.indicator_assembly import ensure_indicators
 from strategy.indicator_spec import IndicatorSpec
+from strategy.strategy_executor import StrategyExecutor
 from strategy.technical_strategy import TechnicalStrategy
 
 DATE = pd.Timestamp("2024-01-02")
@@ -365,6 +369,30 @@ def test_L5_end_to_end_from_feed_to_result():
         "strategies": 0,
         "indicators": 0,
     }
+
+
+def test_F3_calculator_fails_closed():
+    """F3 错误下沉：calculator 自己必须 fail-closed，而不是把 error 藏在返回值角落。"""
+    registry = IndicatorRegistry()
+    registry.load_indicators_from_package("indicators.technical")
+    calculator = IndicatorCalculator()
+    ensure_indicators(
+        registry, calculator, [IndicatorSpec("sma_5", "SMA", {"period": 5})]
+    )
+    bad = _deterministic_bars().drop(columns=["close"])
+
+    with pytest.raises(IndicatorCalculationError, match="指标计算失败"):
+        calculator.batch_calculate(bad, ["sma_5"], use_cache=False)
+
+
+def test_F3b_executor_propagates_indicator_error():
+    """F3b executor 不得吞掉指标异常，否则 Dash 链路继续静默。"""
+    strategy = _NeedsIndicators()
+    executor = StrategyExecutor()
+    bad = _deterministic_bars().drop(columns=["close"])
+
+    with pytest.raises(IndicatorCalculationError, match="指标计算失败"):
+        executor.execute_strategy(strategy, bad)
 
 
 class _SpyDataManager:
