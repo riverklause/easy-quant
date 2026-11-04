@@ -445,6 +445,9 @@ class StrategyExecutor:
             logger.info("实时模式任务已取消")
             raise
         finally:
+            # 兜底：running 变 False 时 stopped_reason 必须非空，监控页不能出现"停了但不知道为什么"
+            if self.realtime_stats['stopped_reason'] is None:
+                self.realtime_stats['stopped_reason'] = "循环退出"
             self._realtime_running = False
             self._realtime_task = None
             logger.info("实时模式已停止")
@@ -454,14 +457,15 @@ class StrategyExecutor:
         停止实时模式
         """
         if not self._realtime_running:
-            print("实时模式未运行")
+            logger.info("实时模式未运行")
             return
         
         self._realtime_running = False
+        self.realtime_stats['stopped_reason'] = "用户取消"
         
         if self._realtime_task and not self._realtime_task.done():
             self._realtime_task.cancel()
-            print("实时模式停止中...")
+            logger.info("实时模式停止中...")
     
     def is_realtime_running(self) -> bool:
         """
