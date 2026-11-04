@@ -16,6 +16,8 @@ import pytest
 
 from backtest.engine.backtest_engine import BacktestEngine
 from backtest.engine.portfolio import Portfolio
+from backtest.datafeed.historical_datafeed import HistoricalDataFeed
+from indicators.technical.trend.moving_average import SMA
 from strategy.technical_strategy import TechnicalStrategy
 
 DATE = pd.Timestamp("2024-01-02")
@@ -139,9 +141,21 @@ class _NeedsIndicators(TechnicalStrategy):
     def __init__(self):
         super().__init__("l4b")
         self.required_indicators = ["sma_5"]
+        self.calls = 0
+
+    def generate_signals(self, indicators_data, **kwargs):
+        self.calls += 1
+        return super().generate_signals(indicators_data, **kwargs)
 
     def apply_rules(self, indicators_data, **kwargs):
-        assert "sma_5" in indicators_data, "指标契约未满足"
+        sma = indicators_data["sma_5"]
+        if isinstance(sma, pd.DataFrame):
+            assert "sma" in sma.columns, f"指标未真正计算: {sma.columns.tolist()}"
+            value = sma["sma"].iloc[-1]
+        else:
+            assert isinstance(sma, (pd.Series, float, int)), f"指标未真正计算: {sma!r}"
+            value = sma.iloc[-1] if hasattr(sma, "iloc") else float(sma)
+        assert not pd.isna(value)
         return [{"type": "BUY"}]
 
 
@@ -175,8 +189,63 @@ def test_L4b_strategy_receives_indicators():
         commission_rate=0.001,
     )
     engine._data = {"X": _deterministic_bars()}
+    engine.indicator_calculator.register_indicator(SMA(period=5), "sma_5")
     date = engine._data["X"].index[-1]
 
     engine._execute_strategy(date, {"X": 11.9})
 
+    assert strategy.calls == 1, "引擎没有把任何数据交给策略"
     assert strategy.signal_errors == 0, "策略拿不到指标：引擎传的是 OHLC，不是指标字典"
+
+
+def test_L4b2_signals_reach_the_book():
+    """L4b2 输出契约：generate_signals 返回的 List[Dict] 必须逐条展开。
+
+    当前 backtest_engine.py:383-391 把整个 list 塞进单个 signal 字段，
+    _process_signal 拿到 list → kind 为空 → 静默无交易（连 failed_signals 都不加）。
+    """
+    strategy = _NeedsIndicators()
+    engine = BacktestEngine(
+        strategy=strategy,
+        initial_capital=1_000_000,
+        commission_rate=0.001,
+    )
+    engine._data = {"X": _deterministic_bars()}
+    engine.indicator_calculator.register_indicator(SMA(period=5), "sma_5")
+    date = engine._data["X"].index[-1]
+
+    engine._execute_strategy(date, {"X": 11.9})
+
+    assert [t["action"] for t in engine.portfolio.trade_history] == ["BUY"]
+    assert engine.failed_signals == 0
+
+
+class _SpyFeed(HistoricalDataFeed):
+    """L4a fixture：只记录引擎是否把取数委托给 datafeed。"""
+
+    def __init__(self):
+        super().__init__(data_manager=None)
+        self.calls = 0
+
+    async def get_data(self, symbols, start_date, end_date, frequency="daily"):
+        self.calls += 1
+        return {"X": _deterministic_bars()}
+
+
+def test_L4a_engine_delegates_loading_to_datafeed():
+    """L4a 取数委托：_load_data 必须走 datafeed，而不是自己造 mock。
+
+    当前 backtest_engine.py:254 直接调 datafeed._generate_mock_data，
+    绕过 get_data，所以真实 data_manager 永远不会被用到。
+    """
+    feed = _SpyFeed()
+    engine = BacktestEngine(
+        strategy=TechnicalStrategy("l4a"),
+        datafeed=feed,
+        initial_capital=1_000_000,
+    )
+
+    engine.run("2024-01-01", "2024-02-01", symbols=["X"])
+
+    assert feed.calls == 1, "引擎没有把取数委托给 datafeed"
+    assert list(engine.get_data()) == ["X"]
