@@ -9,6 +9,7 @@ L1-L3b + L4b：撮合记账 / 卖出盈亏 / 费用语义 / 信号分支 / 循�
 - 所有期望值都是恒等式，不用 != 0 这类弱 oracle。
 """
 
+import asyncio
 from datetime import datetime
 
 import pandas as pd
@@ -304,15 +305,21 @@ def test_E1_failures_are_reported_and_reset():
 
 
 def test_E2_result_reports_real_data_source():
-    """E2 真实 feed 的结果必须标出真实来源，而不是悄悄写成 mock。"""
+    """E2 真实 feed 的结果必须标出真实来源，而不是悄悄写成 mock。
+
+    语义值 "datafeed" 不绑定夹具类名，重命名夹具不会产生假红；
+    具体类名放在 config["datafeed"] 里用于溯源。
+    """
+    feed = _SpyFeed()
     engine = BacktestEngine(
         strategy=_SignalEveryBar(),
-        datafeed=_SpyFeed(),
+        datafeed=feed,
         initial_capital=1_000_000,
     )
     result = engine.run("2024-01-01", "2024-03-01", symbols=["X"])
 
-    assert result.data_source == "_SpyFeed"
+    assert result.data_source == "datafeed"
+    assert result.config["datafeed"] == type(feed).__name__
 
 
 def test_E3_default_feed_is_declared_as_mock():
@@ -321,6 +328,43 @@ def test_E3_default_feed_is_declared_as_mock():
     result = engine.run("2024-01-01", "2024-03-01", symbols=["X"])
 
     assert result.data_source == "mock"
+
+
+def test_F2_allow_mock_false_fails_closed():
+    """F2 禁止 mock 时必须显式报错，而不是悄悄造数据。"""
+    with pytest.raises(ValueError, match="allow_mock=False"):
+        asyncio.run(
+            HistoricalDataFeed(allow_mock=False).get_data(
+                ["X"], "2024-01-01", "2024-02-01"
+            )
+        )
+
+
+def test_L5_end_to_end_from_feed_to_result():
+    """L5 端到端：装配 → 计算 → 信号 → 撮合 → 结果，全程只可能来自 feed。
+
+    _NeedsIndicators 每根 bar 都报 BUY，但引擎有 len < 10 的预热门槛，
+    所以第一笔（也是唯一一笔）成交落在第 10 根 bar，价格为 10.0 + 0.1 * 9。
+    """
+    strategy = _NeedsIndicators()
+    feed = _SpyFeed()
+    engine = BacktestEngine(
+        strategy=strategy,
+        datafeed=feed,
+        initial_capital=1_000_000,
+    )
+
+    result = engine.run("2024-01-01", "2024-03-01", symbols=["X"])
+
+    assert feed.calls == 1
+    assert result.data_source == "datafeed"
+    assert result.trades["price"].tolist() == [10.9]
+    assert len(result.equity_curve) == len(engine.get_data()["X"])
+    assert result.execution_failures == {
+        "signals": 0,
+        "strategies": 0,
+        "indicators": 0,
+    }
 
 
 def test_L4a_engine_delegates_loading_to_datafeed():
