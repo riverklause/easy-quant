@@ -524,3 +524,102 @@ def test_L7_indicators_come_from_the_requested_symbol():
     assert strategy.received[-1]["sma"].iloc[-1] == pytest.approx(
         bars["close"].tail(5).mean()
     )
+
+
+class _CountingCalculator(IndicatorCalculator):
+    """L8 fixture：以 batch_calculate 的输入行数计量指标工作量（不用墙钟）。"""
+
+    def __init__(self):
+        super().__init__()
+        self.rows = 0
+
+    def batch_calculate(self, data, indicator_ids=None, use_cache=True,
+                        cache_mode='history', **kwargs):
+        self.rows += len(data)
+        return super().batch_calculate(
+            data, indicator_ids, use_cache, cache_mode=cache_mode, **kwargs
+        )
+
+
+class _QuietNeedsIndicators(TechnicalStrategy):
+    """L8 fixture：声明指标但不出信号，把焦点留给计算量。"""
+
+    def __init__(self):
+        super().__init__("l8")
+        self.required_indicators = [IndicatorSpec("sma_5", "SMA", {"period": 5})]
+        self.received = {}
+
+    def generate_signals(self, indicators_data, **kwargs):
+        sma = indicators_data["sma_5"]
+        self.received[sma.index[-1]] = sma     # 以“最后一根可见 bar”为键
+        return []
+
+
+def _walk_engine_bars(engine, bars):
+    """逐 bar 驱动引擎（等价于 run() 的主循环，但不载数、不记账）。"""
+    for date in bars.index:
+        engine._execute_strategy(date, {"X": float(bars.loc[date, "close"])})
+
+
+def test_L8_indicator_work_is_linear_in_bars():
+    """L8 复杂度契约：每根 bar 重算整个历史窗口是 O(T²)，预计算应降到 O(T)。
+
+    bars=40、前 9 根被 len<10 门槛跳过，所以逐 bar 前缀计算的行数是
+    10+11+...+40 = 775；预计算一遍是 40。
+    """
+    bars = _deterministic_bars(rows=40)
+    engine = BacktestEngine(strategy=_QuietNeedsIndicators(), initial_capital=1_000_000)
+    engine._data = {"X": bars}
+    counter = _CountingCalculator()
+    engine.indicator_calculator = counter
+
+    _walk_engine_bars(engine, bars)
+
+    assert counter.rows == 40, f"指标重复算了历史窗口: {counter.rows} 行，线性应恰好 40"
+
+
+def test_L8a_precomputed_indicators_stay_in_the_past():
+    """L8a 等价性：预计算的切片必须与逐 bar 前缀计算的值一致，且不含未来。
+
+    这条是 L8 的安全网——只允许“少算”，不允许“算错”或提前看到后面几根 bar。
+    """
+    bars = _deterministic_bars(rows=40)
+    strategy = _QuietNeedsIndicators()
+    engine = BacktestEngine(strategy=strategy, initial_capital=1_000_000)
+    engine._data = {"X": bars}
+
+    _walk_engine_bars(engine, bars)
+
+    for pos in (9, 19, 39):
+        date = bars.index[pos]
+        feed = strategy.received[date]
+        assert len(feed) == pos + 1, f"第 {pos} 根 bar 看到了未来数据"
+        expected = bars["close"].iloc[: pos + 1].tail(5).mean()
+        assert feed["sma"].iloc[-1] == pytest.approx(expected), f"第 {pos} 根 bar 的 SMA 不对"
+
+
+def test_L9_adx_condition_reads_the_adx_column():
+    """L9 ADX 条件必须取 `adx` 列，而不是整行 Series。
+
+    单调上行、period=2 时 adx 精确为 100.0（plus_di=2/3、minus_di=0）。
+    回退成 `result.iloc[-1]` 时得到整行 Series，比较会把 if 变成歧义布尔而抛错。
+    """
+    from screener.conditions.technical.adx import StrongTrend, WeakTrend
+
+    index = pd.bdate_range("2024-01-01", periods=30)
+    close = [10.0 + i for i in range(30)]
+    bars = pd.DataFrame(
+        {
+            "open": close,
+            "high": [c + 0.5 for c in close],
+            "low": [c - 0.5 for c in close],
+            "close": close,
+            "volume": [1000] * 30,
+        },
+        index=index,
+    )
+
+    strong = StrongTrend(period=2, threshold=25)
+    assert strong._calculate_indicator(bars) == 100.0
+    assert strong.evaluate(bars)                       # adx=100 > 25
+    assert not WeakTrend(period=2, threshold=25).evaluate(bars)
