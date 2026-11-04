@@ -6,6 +6,7 @@
 """
 
 import asyncio
+import logging
 from typing import Dict, List, Any, Optional
 import pandas as pd
 from indicators.base.calculator import IndicatorCalculator
@@ -16,6 +17,9 @@ from strategy.technical_strategy import TechnicalStrategy
 from strategy.indicator_spec import indicator_ids
 from strategy.indicator_assembly import ensure_indicators
 from strategy.multi_factor.multi_factor_strategy import MultiFactorStrategy
+
+
+logger = logging.getLogger(__name__)
 
 
 class StrategyExecutor:
@@ -61,6 +65,13 @@ class StrategyExecutor:
         self._realtime_running = False
         self._realtime_task = None
         self._realtime_interval = 2  # 默认2秒
+        # 实时健康快照：供 monitor 页与告警消费
+        self.realtime_stats = {
+            'ticks': 0,
+            'indicator_errors': 0,
+            'last_error': None,
+            'stopped_reason': None,
+        }
     
     def get_required_indicators(self, strategy: BaseStrategy) -> List[str]:
         """
@@ -228,6 +239,12 @@ class StrategyExecutor:
         """
         return self.execution_stats.copy()
     
+    def get_realtime_stats(self) -> Dict:
+        """实时模式健康快照：ticks / indicator_errors / last_error / stopped_reason。"""
+        stats = dict(self.realtime_stats)
+        stats['running'] = self._realtime_running
+        return stats
+    
     def clear_calculator_cache(self):
         """
         清除指标计算器的缓存
@@ -296,8 +313,21 @@ class StrategyExecutor:
     def _realtime_tick(self,
                        data_manager,
                        symbols: List[str],
-                       strategies: Dict[str, BaseStrategy]):
-        """执行一轮实时评估（内部方法）。"""
+                       strategies: Dict[str, BaseStrategy]) -> set:
+        """执行一轮实时评估，返回本轮指标计算失败的 symbol 集合。
+
+        失败的 symbol 不得进入策略评估：calculator 里留着上一轮的旧值，
+        用它出信号比少算一只股票危险得多。
+        """
+        failed = set()
+        
+        # 装配期错误（声明的指标造不出来）不可自愈，直接冒泡让循环停下
+        for strategy in strategies.values():
+            if isinstance(strategy, TechnicalStrategy):
+                ensure_indicators(
+                    self.registry, self.calculator, strategy.get_required_indicators()
+                )
+        
         # 收集所有策略所需的所有指标（策略声明是静态的，不必逐股票重算）
         all_indicators = set()
         for strategy in strategies.values():
@@ -305,6 +335,8 @@ class StrategyExecutor:
         
         # 遍历所有股票
         for symbol in symbols:
+            if not all_indicators:
+                break
             # 从data_manager获取该股票的实时K线数据
             kline_data = data_manager.get_realtime_data('kline', symbol)
             
@@ -312,13 +344,18 @@ class StrategyExecutor:
                 continue
             
             # 使用实时模式计算指标（覆盖更新缓存）
-            if all_indicators:
+            try:
                 self.calculator.batch_calculate(
                     kline_data,
                     list(all_indicators),
                     use_cache=True,
                     cache_mode='realtime'
                 )
+            except IndicatorCalculationError as exc:
+                self.realtime_stats['indicator_errors'] += 1
+                self.realtime_stats['last_error'] = repr(exc)
+                logger.exception("指标计算失败: %s", symbol)
+                failed.add(symbol)
         
         # 执行所有策略
         for strategy_id, strategy in strategies.items():
@@ -329,13 +366,13 @@ class StrategyExecutor:
                 
                 for indicator_id in required_indicators:
                     for symbol in symbols:
+                        if symbol in failed:
+                            continue
                         indicator_df = self.calculator.get_indicator(
                             symbol, indicator_id, cache_mode='realtime'
                         )
                         if indicator_df is not None:
-                            if symbol not in indicators_data:
-                                indicators_data[symbol] = {}
-                            indicators_data[symbol][indicator_id] = indicator_df
+                            indicators_data.setdefault(symbol, {})[indicator_id] = indicator_df
                 
                 # 执行策略
                 if indicators_data:
@@ -349,6 +386,8 @@ class StrategyExecutor:
                 print(f"执行策略 '{strategy_id}' 失败: {e}")
         
         self.execution_stats['total_executions'] += 1
+        self.realtime_stats['ticks'] += 1
+        return failed
     
     async def _realtime_loop(self,
                             data_manager,
