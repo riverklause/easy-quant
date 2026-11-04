@@ -367,6 +367,41 @@ def test_L5_end_to_end_from_feed_to_result():
     }
 
 
+class _SpyDataManager:
+    """记录 datafeed 传给 DataManager 的参数，并可按股票制造取数失败。"""
+
+    def __init__(self, failing=()):
+        self.calls = []
+        self.failing = set(failing)
+
+    async def get_historical_data(self, symbol, start_date, end_date, data_source, **kw):
+        self.calls.append({"symbol": symbol, "data_source": data_source, **kw})
+        if symbol in self.failing:
+            raise RuntimeError("fetch failed")
+        return _deterministic_bars()
+
+
+def test_F1_frequency_reaches_data_manager():
+    """F1 频率透传：算出来的 freq 必须真的传给 DataManager。"""
+    dm = _SpyDataManager()
+    feed = HistoricalDataFeed(data_manager=dm)
+
+    asyncio.run(feed.get_data(["X"], "2024-01-01", "2024-03-01", "weekly"))
+
+    assert dm.calls[0].get("period") == "weekly", f"频率未透传: {dm.calls[0]!r}"
+
+
+def test_F1b_symbol_failure_is_counted():
+    """F1b 单只股票取数失败必须可计数，不能整只静默消失。"""
+    dm = _SpyDataManager(failing={"BAD"})
+    feed = HistoricalDataFeed(data_manager=dm)
+
+    data = asyncio.run(feed.get_data(["BAD", "X"], "2024-01-01", "2024-03-01", "daily"))
+
+    assert list(data) == ["X"]
+    assert getattr(feed, "failed_symbols", None) == 1
+
+
 def test_L4a_engine_delegates_loading_to_datafeed():
     """L4a 取数委托：_load_data 必须走 datafeed，而不是自己造 mock。
 
