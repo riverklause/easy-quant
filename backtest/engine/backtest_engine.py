@@ -433,7 +433,7 @@ class BacktestEngine:
                     except IndicatorCalculationError:
                         self.indicator_errors += 1
                         raise
-                    indicators_data = next(iter(batch.values()), {})
+                    indicators_data = batch.get(symbol) or next(iter(batch.values()), {})
                 else:
                     indicators_data = current_date_data
                 

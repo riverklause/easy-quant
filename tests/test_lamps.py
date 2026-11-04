@@ -485,3 +485,42 @@ def test_L6b_sizer_drives_allocation():
 
     assert pf.trade_history[-1]["quantity"] == 5_000
     assert pf.cash == 949_950.0                 # 1e6 - (50_000 + 50)
+
+
+class _RecordingIndicators(TechnicalStrategy):
+    """L7 fixture：记录策略实际收到的指标，用于区分"拿错股票"。"""
+
+    def __init__(self):
+        super().__init__("l7")
+        self.required_indicators = [IndicatorSpec("sma_5", "SMA", {"period": 5})]
+        self.received = []
+
+    def generate_signals(self, indicators_data, **kwargs):
+        self.received.append(indicators_data["sma_5"])
+        return [{"type": "BUY"}]
+
+
+def test_L7_indicators_come_from_the_requested_symbol():
+    """L7 指标取数必须按 symbol 命中，不能取 batch 的第一个 key。
+
+    _data 目前逐 symbol 存放，calculator 只会返回一个 key；但 calculator 的
+    _split_by_symbol 明确支持多 code 输入，一旦出现多 key，
+    next(iter(...)) 会把别的股票的指标喂给策略（key 名都是 'sma_5'，看不出来）。
+    """
+    strategy = _RecordingIndicators()
+    engine = BacktestEngine(strategy=strategy, initial_capital=1_000_000)
+    bars = _deterministic_bars()
+    engine._data = {"X": bars}
+
+    own = bars["close"].rolling(5).mean().to_frame("sma")
+    engine.indicator_calculator.batch_calculate = lambda *a, **k: {
+        "Y": {"sma_5": own * 1000},     # 别的股票：价格放大 1000 倍
+        "X": {"sma_5": own},
+    }
+
+    engine._execute_strategy(bars.index[-1], {"X": 11.9})
+
+    assert strategy.received, "策略没拿到指标"
+    assert strategy.received[-1]["sma"].iloc[-1] == pytest.approx(
+        bars["close"].tail(5).mean()
+    )
