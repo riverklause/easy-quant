@@ -157,6 +157,8 @@ class BacktestResult:
             'risk_metrics': self._convert_to_serializable(self.risk_metrics),
             'trade_metrics': self._convert_to_serializable(self.trade_metrics),
             'config': self._convert_to_serializable(self.config),
+            'execution_failures': self._convert_to_serializable(self.execution_failures),
+            'data_source': self.data_source,
         }
         
         if not self.equity_curve.empty:
@@ -234,6 +236,8 @@ class BacktestResult:
             risk_metrics=result_dict.get('risk_metrics', {}),
             trade_metrics=result_dict.get('trade_metrics', {}),
             config=result_dict.get('config', {}),
+            execution_failures=result_dict.get('execution_failures', {}),
+            data_source=result_dict.get('data_source', ''),
         )
     
     def print_summary(self):

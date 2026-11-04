@@ -20,6 +20,7 @@
 | E1 | 失败计数未进结果、跨 run 累加 | 只有 E1 红（`2 == 1`） | ✓ |
 | E2 | 真实 feed 未自报来源 | 只有 E2 红（`_SpyFeed != datafeed`），E3 仍绿 | ✓ |
 | E3 | mock 回落无标记 | 只有 E3 红 | ✓ |
+| E4 | 落盘丢 `execution_failures` / `data_source` | 只回退 `data_source` 一行 → 仅 E4 红（`'' != 'mock'`） | ✓ |
 | F2 | `allow_mock=False` 仍静默造数据 | 只有 F2 红 | ✓ |
 | L5 | 端到端链路（装配→计算→信号→撮合→结果） | 与 E2 共享 `data_source` 语义；其余断言独立 | ✓ |
 | F1 | 频率算出来却未透传给 DataManager | 只有 F1 红 | ✓ |
