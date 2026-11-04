@@ -331,6 +331,12 @@ class BacktestEngine:
             current_prices: 当前价格
         """
         for strategy in self.strategies:
+            if isinstance(strategy, TechnicalStrategy):
+                ensure_indicators(
+                    self.indicator_registry,
+                    self.indicator_calculator,
+                    strategy.get_required_indicators(),
+                )
             try:
                 signals = self._generate_signals(strategy, date, current_prices)
             except Exception as e:
@@ -387,7 +393,6 @@ class BacktestEngine:
             
             try:
                 required = strategy.get_required_indicators()
-                ensure_indicators(self.indicator_registry, self.indicator_calculator, required)
                 if required:
                     required_ids = indicator_ids(required)
                     batch = self.indicator_calculator.batch_calculate(
