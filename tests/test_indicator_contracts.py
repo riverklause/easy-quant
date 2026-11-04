@@ -51,6 +51,52 @@ def test_T1_technical_output_is_closed(indicator):
     )
 
 
+def _first_look_ahead_bar(indicator) -> int | None:
+    """返回第一个“前缀计算 != 全量计算的前缀”的 t；因果指标返回 None。"""
+    df = _bars()
+    full = indicator.calculate(df.copy())
+
+    for t in (10, 20, 40):
+        partial = indicator.calculate(df.iloc[:t].copy())
+        try:
+            pd.testing.assert_frame_equal(
+                partial,
+                full.iloc[:t].loc[partial.index],
+                check_names=False,
+                rtol=1e-9,
+            )
+        except AssertionError:
+            return t
+    return None
+
+
+@pytest.mark.parametrize("indicator", _technical_instances())
+def test_T3_indicator_is_causal(indicator):
+    """T3 因果性：t 时刻的指标值只能依赖 t 及之前的数据。
+
+    L8 把引擎改成“全历史预计算 + 按 bar 切片”，这条灯是那次优化的安全网：
+    任何用了全序列统计量（居中窗口、全量 z-score）的指标都会在这里红。
+    """
+    assert _first_look_ahead_bar(indicator) is None, (
+        f"{indicator.name} 在某个 t 用到了未来数据"
+    )
+
+
+class _LookAheadIndicator:
+    """T3 灵敏度自检用的反例：拿全序列最大值做归一化，必然泄漏未来。"""
+
+    name = "LookAhead"
+
+    @staticmethod
+    def calculate(data: pd.DataFrame) -> pd.DataFrame:
+        return pd.DataFrame({"z": data["close"] / data["close"].max()}, index=data.index)
+
+
+def test_T3_detects_a_look_ahead_indicator():
+    """自检：T3 的 oracle 不是摆设——故意泄漏未来的实现必须被判红。"""
+    assert _first_look_ahead_bar(_LookAheadIndicator()) == 10
+
+
 def test_T2_fundamental_output_is_declared_dict():
     reg = _registry()
     row = {
