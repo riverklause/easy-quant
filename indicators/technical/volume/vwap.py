@@ -59,4 +59,4 @@ class VWAP(TechnicalIndicator):
 
         df.drop(columns=['tp', 'cum_volume', 'tp_volume', 'cum_tp_volume'], inplace=True)
 
-        return df
+        return df[self.output_fields]

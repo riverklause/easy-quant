@@ -57,7 +57,7 @@ class ParabolicSAR(TechnicalIndicator):
 
         if len(df) < 2:
             df['sar'] = df['close']
-            return df
+            return df[self.output_fields]
 
         sar = np.zeros(len(df))
         trend = np.zeros(len(df), dtype=int)
@@ -115,4 +115,4 @@ class ParabolicSAR(TechnicalIndicator):
 
         df['sar'] = sar
 
-        return df
+        return df[self.output_fields]

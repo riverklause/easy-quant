@@ -61,7 +61,7 @@ class SMA(TechnicalIndicator):
         else:
             result = data.copy()
             result['sma'] = sma
-            return result
+            return result[self.output_fields]
 
 
 class EMA(TechnicalIndicator):
@@ -116,7 +116,7 @@ class EMA(TechnicalIndicator):
         else:
             result = data.copy()
             result['ema'] = ema
-            return result
+            return result[self.output_fields]
 
 
 class MACD(TechnicalIndicator):
@@ -193,4 +193,4 @@ class MACD(TechnicalIndicator):
             result['macd'] = macd_line
             result['signal'] = signal_line
             result['histogram'] = histogram
-            return result
+            return result[self.output_fields]

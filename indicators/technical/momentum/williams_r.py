@@ -57,4 +57,4 @@ class WilliamsR(TechnicalIndicator):
 
         df['wr'] = (highest_high - df['close']) / (highest_high - lowest_low) * -100
 
-        return df
+        return df[self.output_fields]

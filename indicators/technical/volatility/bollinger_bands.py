@@ -75,4 +75,4 @@ class BollingerBands(TechnicalIndicator):
             result['bb_middle'] = middle_band
             result['bb_upper'] = upper_band
             result['bb_lower'] = lower_band
-            return result
+            return result[self.output_fields]

@@ -71,4 +71,4 @@ class KDJ(TechnicalIndicator):
 
         df.drop(columns=['raw_k'], inplace=True)
 
-        return df
+        return df[self.output_fields]

@@ -54,7 +54,7 @@ class OBV(TechnicalIndicator):
 
         if len(df) < 2:
             df['obv'] = df['volume']
-            return df
+            return df[self.output_fields]
 
         df['price_change'] = df[self.price_field].diff()
 
@@ -65,4 +65,4 @@ class OBV(TechnicalIndicator):
 
         df.drop(columns=['price_change', 'obv_increment'], inplace=True)
 
-        return df
+        return df[self.output_fields]

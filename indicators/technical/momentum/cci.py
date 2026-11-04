@@ -64,4 +64,4 @@ class CCI(TechnicalIndicator):
 
         df.drop(columns=['tp', 'tp_sma', 'md'], inplace=True)
 
-        return df
+        return df[self.output_fields]

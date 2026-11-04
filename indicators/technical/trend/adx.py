@@ -76,4 +76,4 @@ class ADX(TechnicalIndicator):
         df.drop(columns=['tr1', 'tr2', 'tr3', 'tr', 'plus_dm', 'minus_dm',
             'tr_ema', 'plus_dm_ema', 'minus_dm_ema', 'dx'], inplace=True)
 
-        return df
+        return df[self.output_fields]

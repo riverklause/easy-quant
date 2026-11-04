@@ -68,4 +68,4 @@ class RSI(TechnicalIndicator):
         else:
             result = data.copy()
             result['rsi'] = rsi
-            return result
+            return result[self.output_fields]

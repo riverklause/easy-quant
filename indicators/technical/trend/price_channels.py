@@ -56,4 +56,4 @@ class PriceChannels(TechnicalIndicator):
 
         df['lower'] = df['low'].rolling(window=self.period).min()
 
-        return df
+        return df[self.output_fields]

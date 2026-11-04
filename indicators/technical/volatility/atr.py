@@ -61,4 +61,4 @@ class ATR(TechnicalIndicator):
 
         df.drop(columns=['tr1', 'tr2', 'tr3', 'tr'], inplace=True)
 
-        return df
+        return df[self.output_fields]
