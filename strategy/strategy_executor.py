@@ -72,6 +72,7 @@ class StrategyExecutor:
             'last_error': None,
             'stopped_reason': None,
         }
+        self.max_consecutive_failures = 3
     
     def get_required_indicators(self, strategy: BaseStrategy) -> List[str]:
         """
@@ -300,15 +301,38 @@ class StrategyExecutor:
             None
         """
         if self._realtime_running:
-            print("实时模式已在运行中")
+            logger.info("实时模式已在运行中")
             return
         
+        self._reset_realtime_stats()
         self._realtime_running = True
         self._realtime_interval = interval
         self._realtime_task = asyncio.create_task(
             self._realtime_loop(data_manager, symbols, strategies)
         )
-        print(f"实时模式已启动，间隔{interval}秒")
+        self._realtime_task.add_done_callback(self._on_realtime_task_done)
+        logger.info("实时模式已启动，间隔%s秒", interval)
+    
+    def _reset_realtime_stats(self) -> None:
+        self.realtime_stats.update({
+            'ticks': 0,
+            'indicator_errors': 0,
+            'last_error': None,
+            'stopped_reason': None,
+        })
+    
+    def _on_realtime_task_done(self, task: asyncio.Task) -> None:
+        """实时任务异常退出时留痕。
+        
+        asyncio 只在 GC 时才打 "Task exception was never retrieved"，
+        对监控来说等于没有，所以这里显式记录原因。
+        """
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            self.realtime_stats['stopped_reason'] = f"实时任务异常退出: {exc!r}"
+            logger.error("实时任务异常退出: %r", exc, exc_info=exc)
     
     def _realtime_tick(self,
                        data_manager,
@@ -378,12 +402,12 @@ class StrategyExecutor:
                 if indicators_data:
                     signals = strategy.generate_signals(indicators_data)
                     if signals:
-                        print(f"策略 '{strategy_id}' 产生信号: {signals}")
+                        logger.info("策略 '%s' 产生信号: %s", strategy_id, signals)
                 
                 self.execution_stats['successful_executions'] += 1
             except Exception as e:
                 self.execution_stats['failed_executions'] += 1
-                print(f"执行策略 '{strategy_id}' 失败: {e}")
+                logger.exception("执行策略 '%s' 失败: %s", strategy_id, e)
         
         self.execution_stats['total_executions'] += 1
         self.realtime_stats['ticks'] += 1
@@ -401,19 +425,28 @@ class StrategyExecutor:
             symbols: 股票代码列表
             strategies: 策略字典
         """
+        consecutive_failures = 0
         try:
             while self._realtime_running:
-                self._realtime_tick(data_manager, symbols, strategies)
+                failed = self._realtime_tick(data_manager, symbols, strategies)
+                
+                consecutive_failures = consecutive_failures + 1 if failed else 0
+                if consecutive_failures >= self.max_consecutive_failures:
+                    self.realtime_stats['stopped_reason'] = (
+                        f"连续 {consecutive_failures} 轮指标计算失败，已停止"
+                    )
+                    logger.error("%s", self.realtime_stats['stopped_reason'])
+                    break
                 
                 # 等待下一个周期
                 await asyncio.sleep(self._realtime_interval)
                 
         except asyncio.CancelledError:
-            print("实时模式任务已取消")
+            logger.info("实时模式任务已取消")
         finally:
             self._realtime_running = False
             self._realtime_task = None
-            print("实时模式已停止")
+            logger.info("实时模式已停止")
     
     def stop_realtime_mode(self):
         """

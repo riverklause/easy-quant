@@ -25,6 +25,8 @@
 | F1b | 单只股票取数失败静默消失 | 只有 F1b 红 | ✓ |
 | F3 | 指标错误藏在返回值角落，calculator 不 fail-closed | 与 F3b 共享 calculator 缺失 | ✓ |
 | F3b | executor 吞掉指标异常 | 只有 F3b 红（F3 仍绿） | ✓ |
+| R1 | 失败 symbol 的陈旧指标进入策略评估 | 去掉 `if symbol in failed` → 红在 `seen == {"A","B"}` | ✓ |
+| R2 | 连续失败不熔断，循环无限运行 | 去掉熔断块 → `ticks == 4504 != 2` | ✓ |
 
 R1 之后，L4b / L4b2 的绿依赖 L4c 的声明式装配；本表记录的是各自独立修复时的回退结果。
 
