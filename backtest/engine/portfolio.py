@@ -167,6 +167,7 @@ class Portfolio:
         self._total_commission += commission
         
         pos.quantity -= quantity
+        avg_price = pos.avg_price
         if pos.quantity == 0:
             del self.positions[symbol]
         
@@ -178,7 +179,7 @@ class Portfolio:
             'price': exec_price,
             'commission': commission,
             'net_proceeds': net_proceeds,
-            'profit': (exec_price - pos.avg_price) * quantity if symbol in self.positions else 0
+            'profit': (exec_price - avg_price) * quantity
         })
         
         return True

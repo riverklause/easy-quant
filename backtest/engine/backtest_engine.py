@@ -74,6 +74,7 @@ class BacktestEngine:
         self._data: Dict[str, pd.DataFrame] = {}
         self._is_running = False
         self._results: Optional[BacktestResult] = None
+        self.failed_signals = 0
         
         self._progress_callback: Optional[Callable] = None
     
@@ -314,12 +315,16 @@ class BacktestEngine:
         for strategy in self.strategies:
             try:
                 signals = self._generate_signals(strategy, date, current_prices)
-                
-                for signal in signals:
-                    self._process_signal(signal, date, current_prices)
-                    
             except Exception as e:
                 print(f"执行策略 {strategy.name} 出错: {e}")
+                continue
+            
+            for signal in signals:
+                try:
+                    self._process_signal(signal, date, current_prices)
+                except Exception as e:
+                    self.failed_signals += 1
+                    print(f"处理信号出错: {e}")
     
     def _generate_signals(self, 
                          strategy: BaseStrategy, 
@@ -436,10 +441,16 @@ class BacktestEngine:
         signal_type = signal.get('signal')
         
         if isinstance(signal_type, str):
-            if signal_type.upper() == 'BUY' or signal_type.get('type') == 'BUY':
-                self._execute_buy(symbol, price, date)
-            elif signal_type.upper() == 'SELL' or signal_type.get('type') == 'SELL':
-                self._execute_sell(symbol, price, date)
+            kind = signal_type.upper()
+        elif isinstance(signal_type, dict):
+            kind = str(signal_type.get('type', '')).upper()
+        else:
+            kind = ''
+        
+        if kind == 'BUY':
+            self._execute_buy(symbol, price, date)
+        elif kind == 'SELL':
+            self._execute_sell(symbol, price, date)
     
     def _execute_buy(self, symbol: str, price: float, date: pd.Timestamp):
         """执行买入"""
