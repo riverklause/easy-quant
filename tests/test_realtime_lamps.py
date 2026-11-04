@@ -102,6 +102,17 @@ def test_R4_cancel_propagates():
         return task.cancelled()
 
     assert asyncio.run(scenario()) is True
+    assert executor.realtime_stats["stopped_reason"] == "循环退出"
+
+
+def test_R4b_stop_mode_records_reason():
+    executor = StrategyExecutor(calculator=_FakeCalculator(bad_symbols=set()))
+    executor._realtime_running = True
+
+    executor.stop_realtime_mode()
+
+    assert executor.is_realtime_running() is False
+    assert executor.realtime_stats["stopped_reason"] == "用户取消"
 
 
 def test_R3_task_exception_is_recorded():
