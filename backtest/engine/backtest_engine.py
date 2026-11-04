@@ -13,6 +13,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 from backtest.engine.portfolio import Portfolio
+from backtest.engine.position_sizer import FixedFractionSizer, PositionSizer
 from backtest.engine.order_executor import SimpleOrderExecutor, OrderSide
 from backtest.datafeed.historical_datafeed import HistoricalDataFeed
 from backtest.analyzers.performance import PerformanceAnalyzer
@@ -47,7 +48,8 @@ class BacktestEngine:
                  commission_rate: float = 0.001,
                  slippage: float = 0.0,
                  risk_free_rate: float = 0.03,
-                 indicator_registry: IndicatorRegistry = None):
+                 indicator_registry: IndicatorRegistry = None,
+                 position_sizer: Optional[PositionSizer] = None):
         """
         初始化回测引擎
         
@@ -58,6 +60,7 @@ class BacktestEngine:
             commission_rate: 佣金费率
             slippage: 滑点
             risk_free_rate: 无风险利率
+            position_sizer: 仓位计算器，默认固定 10% 初始资金
         """
         self.strategies = strategy if isinstance(strategy, list) else [strategy]
         self.datafeed = datafeed or HistoricalDataFeed()
@@ -84,6 +87,7 @@ class BacktestEngine:
         
         self.initial_capital = initial_capital
         self.risk_free_rate = risk_free_rate
+        self.position_sizer = position_sizer or FixedFractionSizer(0.1)
         
         self._data: Dict[str, pd.DataFrame] = {}
         self._is_running = False
@@ -530,7 +534,7 @@ class BacktestEngine:
         if position:
             return
         
-        allocation = self.initial_capital * 0.1
+        allocation = self.position_sizer.allocate(self.initial_capital)
         quantity = int(allocation / price / 100) * 100
         
         if quantity > 0:

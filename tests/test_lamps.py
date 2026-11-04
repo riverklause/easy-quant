@@ -3,7 +3,7 @@ L1-L3b + L4b：撮合记账 / 卖出盈亏 / 费用语义 / 信号分支 / 循�
 
 约定：
 - L1、L2 直接打 Portfolio（纯单元，零网络），因为 _process_signal 无法指定数量
-  （_execute_buy 的 quantity 由 initial_capital * 0.1 硬编码推导）。
+  （_execute_buy 的 quantity 由 PositionSizer 决定，默认初始资金 10%）。
 - L3 打 BacktestEngine._execute_strategy，验证 :315-322 的 try 作用域。
 - L4b 只验证“引擎喂给策略的是指标，不是 OHLC”；信号输出形状是另一盏灯。
 - 所有期望值都是恒等式，不用 != 0 这类弱 oracle。
@@ -17,6 +17,7 @@ import pytest
 
 from backtest.engine.backtest_engine import BacktestEngine, IndicatorCalculationError
 from backtest.engine.portfolio import Portfolio
+from backtest.engine.position_sizer import FixedFractionSizer
 from backtest.datafeed.historical_datafeed import HistoricalDataFeed
 from indicators.base.calculator import IndicatorCalculator
 from indicators.base.registry import IndicatorRegistry
@@ -447,3 +448,40 @@ def test_L4a_engine_delegates_loading_to_datafeed():
 
     assert feed.calls == 1, "引擎没有把取数委托给 datafeed"
     assert list(engine.get_data()) == ["X"]
+
+
+def _buy_once(initial_capital: float, price: float, *, sizer=None) -> Portfolio:
+    """同一 fixture 只买一笔，返回记账后的组合。"""
+    engine = BacktestEngine(
+        strategy=TechnicalStrategy("l6"),
+        initial_capital=initial_capital,
+        commission_rate=0.001,
+        position_sizer=sizer,
+    )
+    engine._generate_signals = lambda strategy, date, prices: [
+        {"symbol": "X", "price": price, "signal": "BUY"}
+    ]
+    engine._execute_strategy(DATE, {"X": price})
+    return engine.portfolio
+
+
+def test_L6_default_sizer_keeps_trades_identical():
+    """L6 仓位抽象行为不变：默认 10% 固定比例，逐笔成交与重构前完全一致。"""
+    pf = _buy_once(1_000_000, 10.0)
+
+    trade = pf.trade_history[-1]
+    assert trade["symbol"] == "X"
+    assert trade["action"] == "BUY"
+    assert trade["quantity"] == 10_000          # int(1e6 * 0.1 / 10 / 100) * 100
+    assert trade["price"] == 10.0
+    assert trade["commission"] == 100.0         # 100_000 * 0.001
+    assert trade["total_cost"] == 100_100.0
+    assert pf.cash == 899_900.0
+
+
+def test_L6b_sizer_drives_allocation():
+    """L6b 仓位可注入：换 sizer 只改预算，不改整手取整与撮合语义。"""
+    pf = _buy_once(1_000_000, 10.0, sizer=FixedFractionSizer(0.05))
+
+    assert pf.trade_history[-1]["quantity"] == 5_000
+    assert pf.cash == 949_950.0                 # 1e6 - (50_000 + 50)
