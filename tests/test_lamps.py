@@ -1,10 +1,11 @@
 """
-L1-L3 三盏灯：撮合记账 / 卖出盈亏 / 信号循环作用域
+L1-L3b + L4b：撮合记账 / 卖出盈亏 / 费用语义 / 信号分支 / 循环作用域 / 指标接线
 
 约定：
 - L1、L2 直接打 Portfolio（纯单元，零网络），因为 _process_signal 无法指定数量
   （_execute_buy 的 quantity 由 initial_capital * 0.1 硬编码推导）。
 - L3 打 BacktestEngine._execute_strategy，验证 :315-322 的 try 作用域。
+- L4b 只验证“引擎喂给策略的是指标，不是 OHLC”；信号输出形状是另一盏灯。
 - 所有期望值都是恒等式，不用 != 0 这类弱 oracle。
 """
 
@@ -130,3 +131,52 @@ def test_L3b_one_bad_signal_does_not_drop_the_rest():
     assert engine.portfolio.get_position("A") is not None
     assert engine.portfolio.get_position("B") is not None
     assert engine.failed_signals == 1, "静默失败必须可聚合，不能只 print"
+
+
+class _NeedsIndicators(TechnicalStrategy):
+    """L4b fixture：声明所需指标，让“引擎没喂指标”变成可观测的计数。"""
+
+    def __init__(self):
+        super().__init__("l4b")
+        self.required_indicators = ["sma_5"]
+
+    def apply_rules(self, indicators_data, **kwargs):
+        assert "sma_5" in indicators_data, "指标契约未满足"
+        return [{"type": "BUY"}]
+
+
+def _deterministic_bars(rows: int = 20) -> pd.DataFrame:
+    """写死价格序列，不用 np.random（避免 hash 随机化重演）。"""
+    index = pd.bdate_range("2024-01-01", periods=rows)
+    close = [10.0 + i * 0.1 for i in range(rows)]
+    return pd.DataFrame(
+        {
+            "open": close,
+            "high": [c + 0.1 for c in close],
+            "low": [c - 0.1 for c in close],
+            "close": close,
+            "volume": [1000] * rows,
+        },
+        index=index,
+    )
+
+
+def test_L4b_strategy_receives_indicators():
+    """L4b 输入契约：引擎必须把 required_indicators 喂给策略，而不是 OHLC 原表。
+
+    当前 backtest_engine.py:366 传的是 current_date_data（OHLC DataFrame），
+    策略内 raise 的“缺少所需指标”在 technical_strategy.py:122 被吞掉，
+    只能通过 strategy.signal_errors 观测。信号输出形状（list 展平）是另一盏灯。
+    """
+    strategy = _NeedsIndicators()
+    engine = BacktestEngine(
+        strategy=strategy,
+        initial_capital=1_000_000,
+        commission_rate=0.001,
+    )
+    engine._data = {"X": _deterministic_bars()}
+    date = engine._data["X"].index[-1]
+
+    engine._execute_strategy(date, {"X": 11.9})
+
+    assert strategy.signal_errors == 0, "策略拿不到指标：引擎传的是 OHLC，不是指标字典"

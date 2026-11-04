@@ -7,6 +7,10 @@
 from typing import List, Dict, Optional, Any
 from strategy.base_strategy import BaseStrategy
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class TechnicalStrategy(BaseStrategy):
     """
@@ -32,6 +36,9 @@ class TechnicalStrategy(BaseStrategy):
         
         # 策略参数
         self.strategy_params: Dict = {}
+        
+        # 信号生成失败计数（可聚合，供回测/监控消费）
+        self.signal_errors = 0
     
     def initialize(self, **kwargs):
         """
@@ -113,7 +120,8 @@ class TechnicalStrategy(BaseStrategy):
                 self.record_signal(signal)
                 
         except Exception as e:
-            print(f"❌ 技术指标策略 '{self.name}' 生成信号失败: {e}")
+            self.signal_errors += 1
+            logger.exception("技术指标策略 '%s' 生成信号失败: %s", self.name, e)
         
         return signals
     
