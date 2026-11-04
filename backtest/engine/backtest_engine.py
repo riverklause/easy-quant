@@ -90,6 +90,9 @@ class BacktestEngine:
         self.position_sizer = position_sizer or FixedFractionSizer(0.1)
         
         self._data: Dict[str, pd.DataFrame] = {}
+        # 指标预计算结果：{(symbol, indicator_ids): {indicator_id: 全历史指标帧}}
+        # 每根 bar 只做按日切片，避免对同一历史窗口重复计算（O(T²) -> O(T)）。
+        self._indicator_frames: Dict[tuple, Dict[str, Any]] = {}
         self._is_running = False
         self._results: Optional[BacktestResult] = None
         self.failed_signals = 0
@@ -141,6 +144,7 @@ class BacktestEngine:
         logger.info("初始资金: %s", f"{self.initial_capital:,.2f}")
         
         self._data = self._load_data(symbols, start_date, end_date, frequency)
+        self._indicator_frames = {}
         
         if not self._data:
             logger.warning("没有加载到数据，回测终止")
@@ -230,6 +234,7 @@ class BacktestEngine:
             strategy.reset_stats()
         
         self._data = await self.datafeed.get_data(symbols, start_date, end_date, frequency)
+        self._indicator_frames = {}
         self._mark_data_source()
         
         if not self._data:
@@ -405,6 +410,36 @@ class BacktestEngine:
         
         return signals
     
+    def _indicator_data_for(self,
+                            symbol: str,
+                            required_ids: List[str],
+                            df: pd.DataFrame,
+                            visible_rows: int) -> Dict[str, Any]:
+        """返回当前 bar 可见的指标切片。
+
+        指标全历史只计算一次（指标本身是因果的：rolling/ewm/cumsum 的 t 值
+        只依赖 t 及之前的数据），此后每根 bar 只按可见行数截断，
+        避免把同一段历史窗口逐 bar 重算（O(T²) -> O(T)）。
+        """
+        key = (symbol, tuple(required_ids))
+        frames = self._indicator_frames.get(key)
+
+        if frames is None:
+            try:
+                batch = self.indicator_calculator.batch_calculate(
+                    df, required_ids, use_cache=False
+                )
+            except IndicatorCalculationError:
+                self.indicator_errors += 1
+                raise
+            frames = batch.get(symbol) or next(iter(batch.values()), {})
+            self._indicator_frames[key] = frames
+
+        return {
+            indicator_id: value.iloc[:visible_rows] if hasattr(value, 'iloc') else value
+            for indicator_id, value in frames.items()
+        }
+
     def _generate_technical_signals(self,
                                     strategy: TechnicalStrategy,
                                     date: pd.Timestamp,
@@ -426,14 +461,9 @@ class BacktestEngine:
                 required = strategy.get_required_indicators()
                 if required:
                     required_ids = indicator_ids(required)
-                    try:
-                        batch = self.indicator_calculator.batch_calculate(
-                            current_date_data, required_ids, use_cache=False
-                        )
-                    except IndicatorCalculationError:
-                        self.indicator_errors += 1
-                        raise
-                    indicators_data = batch.get(symbol) or next(iter(batch.values()), {})
+                    indicators_data = self._indicator_data_for(
+                        symbol, required_ids, df, len(current_date_data)
+                    )
                 else:
                     indicators_data = current_date_data
                 
