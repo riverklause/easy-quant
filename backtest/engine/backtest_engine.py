@@ -94,6 +94,7 @@ class BacktestEngine:
         self.failed_signals = 0
         self.failed_strategies = 0
         self.indicator_errors = 0
+        self.data_source = ""
         
         self._progress_callback: Optional[Callable] = None
     
@@ -277,9 +278,14 @@ class BacktestEngine:
         if symbols is None:
             symbols = self._get_strategy_symbols()
         
-        return asyncio.run(
+        data = asyncio.run(
             self.datafeed.get_data(symbols, start_date, end_date, frequency)
         )
+        self.data_source = (
+            "mock" if getattr(self.datafeed, "used_mock", False)
+            else type(self.datafeed).__name__
+        )
+        return data
     
     def _get_strategy_symbols(self) -> List[str]:
         """获取策略所需的股票代码"""
@@ -597,7 +603,8 @@ class BacktestEngine:
                 "signals": self.failed_signals,
                 "strategies": self.failed_strategies,
                 "indicators": self.indicator_errors,
-            }
+            },
+            data_source=self.data_source
         )
     
     def _create_empty_result(self, start_date: str, end_date: str) -> BacktestResult:
@@ -608,6 +615,7 @@ class BacktestEngine:
             end_date=end_date,
             initial_capital=self.initial_capital,
             execution_failures={"signals": 0, "strategies": 0, "indicators": 0},
+            data_source=self.data_source,
         )
     
     def get_results(self) -> Optional[BacktestResult]:

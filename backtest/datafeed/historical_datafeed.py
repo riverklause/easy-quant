@@ -5,9 +5,13 @@
 
 from typing import Dict, List, Optional, Union
 from datetime import datetime
+import logging
+
 import pandas as pd
 import numpy as np
 from abc import ABC, abstractmethod
+
+logger = logging.getLogger(__name__)
 
 
 class BaseDataFeed(ABC):
@@ -44,14 +48,17 @@ class HistoricalDataFeed(BaseDataFeed):
     整合DataManager获取历史数据进行回测
     """
     
-    def __init__(self, data_manager=None):
+    def __init__(self, data_manager=None, allow_mock: bool = True):
         """
         初始化历史数据源
         
         Args:
             data_manager: DataManager实例，如果为None则创建mock数据
+            allow_mock: 未配置 data_manager 时是否允许回落模拟数据
         """
         self.data_manager = data_manager
+        self.allow_mock = allow_mock
+        self.used_mock = False
         self._cache: Dict[str, pd.DataFrame] = {}
         self._frequency_map = {
             'daily': '1d',
@@ -77,6 +84,10 @@ class HistoricalDataFeed(BaseDataFeed):
             股票数据字典
         """
         if self.data_manager is None:
+            if not self.allow_mock:
+                raise ValueError("未配置 data_manager，且 allow_mock=False")
+            self.used_mock = True
+            logger.warning("未配置 data_manager，使用模拟数据")
             return self._generate_mock_data(symbols, start_date, end_date, frequency)
         
         result = {}
@@ -125,6 +136,10 @@ class HistoricalDataFeed(BaseDataFeed):
             股票数据字典
         """
         if self.data_manager is None:
+            if not self.allow_mock:
+                raise ValueError("未配置 data_manager，且 allow_mock=False")
+            self.used_mock = True
+            logger.warning("未配置 data_manager，使用模拟数据")
             return self._generate_mock_data(symbols, start_date, end_date, frequency)
         
         result = {}
