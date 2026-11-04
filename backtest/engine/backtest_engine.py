@@ -116,7 +116,6 @@ class BacktestEngine:
             end_date: str,
             symbols: List[str] = None,
             frequency: str = 'daily',
-            rebalance_dates: List[str] = None,
             benchmark_symbol: str = None) -> BacktestResult:
         """
         执行回测
@@ -126,7 +125,6 @@ class BacktestEngine:
             end_date: 结束日期
             symbols: 股票代码列表
             frequency: 数据频率 (daily, weekly, monthly)
-            rebalance_dates: 调仓日期列表（可选）
             benchmark_symbol: 基准股票代码（可选）
             
         Returns:
@@ -152,9 +150,6 @@ class BacktestEngine:
         
         trading_dates = self._get_trading_dates()
         
-        if rebalance_dates:
-            rebalance_dates = [pd.to_datetime(d) for d in rebalance_dates]
-        
         prev_value = self.initial_capital
         
         total_dates = len(trading_dates)
@@ -170,9 +165,6 @@ class BacktestEngine:
                 
                 self.portfolio.record_snapshot(date, current_prices, prev_value)
                 prev_value = self.portfolio.get_total_value(current_prices)
-            
-            if rebalance_dates and date in rebalance_dates:
-                self._rebalance(date, current_prices)
             
             if self._progress_callback:
                 self._progress_callback(i + 1, total_dates)
@@ -190,7 +182,6 @@ class BacktestEngine:
                   end_date: str,
                   symbols: List[str] = None,
                   frequency: str = 'daily',
-                  rebalance_dates: List[str] = None,
                   benchmark_symbol: str = None) -> BacktestResult:
         """
         异步执行回测
@@ -200,7 +191,6 @@ class BacktestEngine:
             end_date: 结束日期
             symbols: 股票代码列表
             frequency: 数据频率
-            rebalance_dates: 调仓日期列表
             benchmark_symbol: 基准股票代码
             
         Returns:
@@ -213,8 +203,8 @@ class BacktestEngine:
             asyncio.set_event_loop(loop)
         
         return loop.run_until_complete(
-            self._run_async_impl(start_date, end_date, symbols, frequency, 
-                               rebalance_dates, benchmark_symbol)
+            self._run_async_impl(start_date, end_date, symbols, frequency,
+                                 benchmark_symbol)
         )
     
     async def _run_async_impl(self,
@@ -222,7 +212,6 @@ class BacktestEngine:
                               end_date: str,
                               symbols: List[str],
                               frequency: str,
-                              rebalance_dates: List[str],
                               benchmark_symbol: str) -> BacktestResult:
         """异步回测实现"""
         self._is_running = True
@@ -576,16 +565,6 @@ class BacktestEngine:
         
         if position:
             self.portfolio.sell(symbol, position.quantity, price, date)
-    
-    def _rebalance(self, date: pd.Timestamp, current_prices: Dict[str, float]):
-        """
-        调仓
-        
-        Args:
-            date: 日期
-            current_prices: 当前价格
-        """
-        pass
     
     def _generate_results(self, 
                          start_date: str, 
