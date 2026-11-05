@@ -457,6 +457,20 @@ python examples/demo_unified_strategy.py
 4. 推送到分支
 5. 创建Pull Request
 
+## 本地钩子
+
+仓库自带 `.githooks/`（提交/推送前跑 `pytest`）。启用一次：
+
+```bash
+git config core.hooksPath .githooks
+```
+
+- 解释器取 `${PYTHON:-python}`；若 `python` 不是装了依赖的那个（`.venv` 可能是空壳），
+  先 `export PYTHON=/path/to/python`。
+- 只改文档的提交会跳过测试；`git commit --no-verify` 可强制跳过。
+- `core.hooksPath` 是**本地配置**，不进版本库——换机器要重新执行一次。
+- Windows 下钩子由 Git Bash 执行：`python` 需在 PATH，脚本按 LF 检出（已在 `.gitattributes` 钉住）。
+
 ## 许可证
 
 MIT License

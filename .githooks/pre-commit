@@ -1,0 +1,32 @@
+#!/bin/sh
+# 提交前跑全套测试。用法：
+#   pre-commit staged  —— 无 .py 变更时跳过（pre-commit 用）
+#   pre-commit all     —— 总是跑（pre-push 用）
+# 紧急跳过：git commit --no-verify
+# 一次性打点：确认 GitHub Desktop 是否执行钩子后删除下一行
+echo "$(date) $0 $*" >> .git/hook-runs.log
+set -u
+
+mode="${1:-staged}"
+py="${PYTHON:-python}"
+
+if [ "$mode" = "staged" ]; then
+    if ! git diff --cached --name-only --diff-filter=ACMR | grep -q '\.py$'; then
+        exit 0
+    fi
+fi
+
+if ! command -v "$py" >/dev/null 2>&1; then
+    echo "hooks: 找不到 '$py'；请设置 PYTHON=/path/to/python" >&2
+    exit 1
+fi
+
+if ! "$py" -m pytest --version >/dev/null 2>&1; then
+    echo "hooks: '$py' 里没有 pytest（.venv 可能是空壳）；请设置 PYTHON" >&2
+    exit 1
+fi
+
+"$py" -m pytest -q || {
+    echo "hooks: pytest 未通过，已中止（git commit --no-verify 可跳过）" >&2
+    exit 1
+}

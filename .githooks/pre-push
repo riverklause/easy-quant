@@ -1,0 +1,3 @@
+#!/bin/sh
+# 与 pre-commit 共用实现，但总是跑全套（push 时没有"暂存区"的概念）。
+exec "$(dirname "$0")/pre-commit" all
