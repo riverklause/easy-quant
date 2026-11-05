@@ -48,6 +48,8 @@
 | LG3 | `utils.date_utils` 可导入（依赖 `holidays`） | 装包后自动生效；目前以 skipped 形式存在，不藏着 | ✓（skipped）|
 | S1 | `StockScreener` 暴露条件失败（不静默吞） | 去掉 `logger.exception` + `condition_errors` 计数 + `fail_fast` 开关 → S1 两测试红（AttributeError / TypeError） | ✓ |
 | S2 | `StochasticOversold/Overbought` 可评估（复用 KDJ） | 回退成原 `Stochastic` 不存在的 import → S2 两测试都是 ModuleNotFoundError 红 | ✓ |
+| M1 | `run()` / `run_async()` 两条入口产出相同结果（合并后成同一实现） | 保护性灯；当前即绿，合并后仍绿（证明"结果一致"而不是"实现方式"） | ✓ |
+| M2 | `run_async(symbols=None)` 回落到默认标的（async 路径以前绕过 `_load_data`） | 合并前红（`TypeError: 'NoneType' object is not iterable`），合并修掉；回退 `_load_data` 里的 `symbols is None` 解析 → 只有 M2 红，M1 不受影响 | ✓ |
 
 R1 之后，L4b / L4b2 的绿依赖 L4c 的声明式装配；本表记录的是各自独立修复时的回退结果。
 

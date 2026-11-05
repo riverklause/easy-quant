@@ -111,19 +111,24 @@ class BacktestEngine:
             symbols: List[str] = None,
             frequency: str = 'daily',
             benchmark_symbol: str = None) -> BacktestResult:
+        """同步入口：内部用 asyncio.run 驱动 run_async。
+
+        不能在已运行的事件循环里调用——notebook 里请 `await run_async(...)`。
         """
-        执行回测
-        
-        Args:
-            start_date: 开始日期
-            end_date: 结束日期
-            symbols: 股票代码列表
-            frequency: 数据频率 (daily, weekly, monthly)
-            benchmark_symbol: 基准股票代码（可选）
-            
-        Returns:
-            BacktestResult回测结果
-        """
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(self.run_async(
+                start_date, end_date, symbols, frequency, benchmark_symbol))
+        raise RuntimeError("run() 不能在运行中的事件循环里调用，请 await run_async()")
+
+    async def run_async(self,
+                        start_date: str,
+                        end_date: str,
+                        symbols: List[str] = None,
+                        frequency: str = 'daily',
+                        benchmark_symbol: str = None) -> BacktestResult:
+        """回测的唯一实现。"""
         self._is_running = True
         self.portfolio.reset()
         self.failed_signals = 0
@@ -131,116 +136,37 @@ class BacktestEngine:
         self.indicator_errors = 0
         for strategy in self.strategies:
             strategy.reset_stats()
-        
+
         logger.info("开始回测: %s ~ %s", start_date, end_date)
         logger.info("初始资金: %s", f"{self.initial_capital:,.2f}")
-        
-        self._data = self._load_data(symbols, start_date, end_date, frequency)
+
+        self._data = await self._load_data(symbols, start_date, end_date, frequency)
         self._indicator_frames = {}
-        
+
         if not self._data:
             logger.warning("没有加载到数据，回测终止")
             return self._create_empty_result(start_date, end_date)
-        
+
         trading_dates = self._get_trading_dates()
-        
         prev_value = self.initial_capital
-        
         total_dates = len(trading_dates)
-        
+
         for i, date in enumerate(trading_dates):
             if not self._is_running:
                 break
-            
+
             current_prices = self._get_current_prices(date)
-            
             if current_prices:
                 self._execute_strategy(date, current_prices)
-                
                 self.portfolio.record_snapshot(date, current_prices, prev_value)
                 prev_value = self.portfolio.get_total_value(current_prices)
-            
+
             if self._progress_callback:
                 self._progress_callback(i + 1, total_dates)
-        
+
         self._generate_results(start_date, end_date, benchmark_symbol)
-        
         self._is_running = False
-        
         logger.info("回测完成")
-        
-        return self._results
-    
-    def run_async(self,
-                  start_date: str,
-                  end_date: str,
-                  symbols: List[str] = None,
-                  frequency: str = 'daily',
-                  benchmark_symbol: str = None) -> BacktestResult:
-        """
-        异步执行回测
-        
-        Args:
-            start_date: 开始日期
-            end_date: 结束日期
-            symbols: 股票代码列表
-            frequency: 数据频率
-            benchmark_symbol: 基准股票代码
-            
-        Returns:
-            BacktestResult回测结果
-        """
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        
-        return loop.run_until_complete(
-            self._run_async_impl(start_date, end_date, symbols, frequency,
-                                 benchmark_symbol)
-        )
-    
-    async def _run_async_impl(self,
-                              start_date: str,
-                              end_date: str,
-                              symbols: List[str],
-                              frequency: str,
-                              benchmark_symbol: str) -> BacktestResult:
-        """异步回测实现"""
-        self._is_running = True
-        self.portfolio.reset()
-        self.failed_signals = 0
-        self.failed_strategies = 0
-        self.indicator_errors = 0
-        for strategy in self.strategies:
-            strategy.reset_stats()
-        
-        self._data = await self.datafeed.get_data(symbols, start_date, end_date, frequency)
-        self._indicator_frames = {}
-        self._mark_data_source()
-        
-        if not self._data:
-            return self._create_empty_result(start_date, end_date)
-        
-        trading_dates = self._get_trading_dates()
-        prev_value = self.initial_capital
-        
-        for date in trading_dates:
-            if not self._is_running:
-                break
-            
-            current_prices = self._get_current_prices(date)
-            
-            if current_prices:
-                self._execute_strategy(date, current_prices)
-                self.portfolio.record_snapshot(date, current_prices, prev_value)
-                prev_value = self.portfolio.get_total_value(current_prices)
-        
-        self._generate_results(start_date, end_date, benchmark_symbol)
-        
-        self._is_running = False
-        
         return self._results
     
     def stop(self):
@@ -248,29 +174,16 @@ class BacktestEngine:
         self._is_running = False
         logger.info("回测已停止")
     
-    def _load_data(self, 
-                   symbols: Optional[List[str]], 
-                   start_date: str, 
-                   end_date: str,
-                   frequency: str) -> Dict[str, pd.DataFrame]:
-        """
-        加载数据
-        
-        Args:
-            symbols: 股票代码列表
-            start_date: 开始日期
-            end_date: 结束日期
-            frequency: 数据频率
-            
-        Returns:
-            股票数据字典
-        """
+    async def _load_data(self,
+                         symbols: Optional[List[str]],
+                         start_date: str,
+                         end_date: str,
+                         frequency: str) -> Dict[str, pd.DataFrame]:
+        """加载数据（协程，只由 run_async 调用）。"""
         if symbols is None:
             symbols = self._get_strategy_symbols()
-        
-        data = asyncio.run(
-            self.datafeed.get_data(symbols, start_date, end_date, frequency)
-        )
+
+        data = await self.datafeed.get_data(symbols, start_date, end_date, frequency)
         self._mark_data_source()
         return data
 
