@@ -302,6 +302,38 @@ def test_FL7b_ic_decay_is_strictly_monotone_for_an_iid_predictor():
     assert decay["n"].is_monotonic_decreasing             # 样本随 horizon 变少
 
 
+def test_FL11_ic_decay_stride_removes_overlap():
+    """stride=True 时按 horizon 等间隔抽样：n 变成新息样本数，h=1 不变。
+
+    100 行 × 30 只、无缺失：
+      h=1  → 99 个有效截面（末行无前瞻）
+      h=5  → 重叠 95 个；stride 后 95//5 = 19
+      h=10 → 重叠 90 个；stride 后 90//10 = 9
+    """
+    from research.factor_lab.decay import ic_decay
+
+    rng = np.random.default_rng(0)
+    idx = pd.bdate_range("2024-01-01", periods=100)
+    cols = [f"S{i}" for i in range(30)]
+    ret = pd.DataFrame(rng.normal(0, 0.01, (100, 30)), index=idx, columns=cols)
+    close = (1 + ret).cumprod()
+    factor = close.pct_change().shift(-1)          # 完美 1 日预测器
+
+    overlap = ic_decay(factor, close, horizons=(1, 5, 10))
+    strided = ic_decay(factor, close, horizons=(1, 5, 10), stride=True)
+
+    assert overlap.loc[1, "n"] == 99
+    assert overlap.loc[5, "n"] == 95               # 只少尾部 4 天
+    assert overlap.loc[10, "n"] == 90
+
+    assert strided.loc[1, "n"] == 99               # h=1 抽样是恒等
+    assert strided.loc[5, "n"] == 19               # 95 // 5
+    assert strided.loc[10, "n"] == 9               # 90 // 10
+
+    assert overlap.loc[1, "mean_ic"] == pytest.approx(1.0)
+    assert strided.loc[1, "mean_ic"] == pytest.approx(1.0)
+
+
 # ===== FL8：因子相关性矩阵（逐日截面 Spearman 再取均值）=====
 
 def test_FL8_correlation_is_rank_based_and_symmetric():
