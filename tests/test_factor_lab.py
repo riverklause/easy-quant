@@ -136,3 +136,52 @@ def test_FL3b_threshold_counts_pairs_not_columns():
 
     assert len(ic) == 4                                 # 6 行 - 该日 - 末行无标签
     assert idx[2] not in ic.index
+
+
+# ===== FL4：分档收益（单调性 + 复用 min_stocks 语义 + 并列确定性）=====
+
+def test_FL4_quantiles_are_monotone_when_label_tracks_factor():
+    """标签严格随因子递增 ⇒ 五档平均前瞻收益必须单调递增。"""
+    from research.factor_lab.quantile import quantile_returns
+
+    factor = _value_panel(rows=20, n=100, seed=11)
+    fwd = factor * 0.001                       # 标签是该因子的单调函数
+
+    q = quantile_returns(factor, fwd, n_groups=5)
+
+    assert list(q.columns) == ["Q1", "Q2", "Q3", "Q4", "Q5"]
+    assert (q["Q2"] > q["Q1"]).all()
+    assert (q["Q3"] > q["Q2"]).all()
+    assert (q["Q4"] > q["Q3"]).all()
+    assert (q["Q5"] > q["Q4"]).all()
+    assert (q["Q5"] - q["Q1"] > 0).all()       # 多空价差为正
+
+
+def test_FL4b_quantile_reuses_min_stocks():
+    """10 列但某日只有 2 个成对有效样本：该日整行丢弃（与 rank_ic 同一语义）。"""
+    from research.factor_lab.quantile import quantile_returns
+
+    factor = _value_panel(rows=6, n=10, seed=3)
+    factor.loc[factor.index[2], factor.columns[2:]] = np.nan
+    fwd = factor * 0.001                       # 继承 NaN ⇒ 成对有效样本 = 2
+
+    q = quantile_returns(factor, fwd, n_groups=5, min_stocks=5)
+
+    assert factor.index[2] not in q.index
+    assert len(q) == 5                         # 6 行 - 被丢的那行
+
+
+def test_FL4c_ties_are_split_deterministically():
+    """全并列值 + method='first' 会按列顺序切五档，没有空档。"""
+    from research.factor_lab.quantile import quantile_returns
+
+    idx = pd.bdate_range("2024-01-01", periods=1)
+    cols = [f"S{i}" for i in range(10)]
+    factor = pd.DataFrame([[1.0] * 10], index=idx, columns=cols)
+    fwd = pd.DataFrame([np.arange(10) * 0.01], index=idx, columns=cols)
+
+    q = quantile_returns(factor, fwd, n_groups=5, min_stocks=5)
+    assert list(q.columns) == ["Q1", "Q2", "Q3", "Q4", "Q5"]
+    # "average" 会让所有值落同一档 → 其余四档 NaN，行被 dropna(how='all') 保留
+    # 但列是 NaN；"first" 按顺序切成 2/2/2/2/2，五档都有值
+    assert not q.isna().any().any()
