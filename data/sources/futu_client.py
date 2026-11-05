@@ -416,7 +416,7 @@ class FutuAPIClient(BaseDataSourceClient):
             symbol (str): 股票代码，支持Futu格式（如：HK.00700, US.AAPL）
             
         Returns:
-            Tuple[bool, pd.DataFrame]: 包含复权因子数据的DataFrame，包含以下字段：
+            pd.DataFrame: 复权因子数据，索引为 ex_div_date；无数据时返回空 DataFrame。包含以下字段：
                 - ex_div_date: 除权除息日
                 - split_ratio: 拆合股比例
                 - per_cash_div: 每股派现
@@ -459,10 +459,10 @@ class FutuAPIClient(BaseDataSourceClient):
                 if 'ex_div_date' in df.columns:
                     df.set_index('ex_div_date', inplace=True)
                 
-                return True, df
+                return df
             else:
-                return False, pd.DataFrame()
-                
+                return pd.DataFrame()
+
         except Exception as e:
             raise Exception(f"获取Futu复权因子错误: {e}")
 
@@ -487,7 +487,15 @@ class FutuAPIClient(BaseDataSourceClient):
             - 复权因子选择逻辑：选择目标日期之前（含）的最新复权因子
             - 如果target_date为None，则使用最新的复权因子
             - 如果目标日期早于所有复权因子日期，则返回原始价格
+
+        Raises:
+            ValueError: adjust_type 不是 'forward' 或 'backward'
         """
+        if adjust_type not in ('forward', 'backward'):
+            raise ValueError(
+                f"不支持的复权类型: {adjust_type!r}，可选 'forward' 或 'backward'"
+            )
+
         try:
             # 获取复权因子
             rehab_factors = await self.get_rehab_factors(symbol)
