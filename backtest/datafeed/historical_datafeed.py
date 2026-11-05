@@ -117,41 +117,6 @@ class HistoricalDataFeed(BaseDataFeed):
         
         return result
     
-    def get_data_sync(self, 
-                      symbols: List[str], 
-                      start_date: str, 
-                      end_date: str,
-                      frequency: str = 'daily') -> Dict[str, pd.DataFrame]:
-        """
-        同步获取历史数据
-        
-        Args:
-            symbols: 股票代码列表
-            start_date: 开始日期
-            end_date: 结束日期
-            frequency: 数据频率
-            
-        Returns:
-            股票数据字典
-        """
-        if self.data_manager is None:
-            if not self.allow_mock:
-                raise ValueError("未配置 data_manager，且 allow_mock=False")
-            self.used_mock = True
-            logger.warning("未配置 data_manager，使用模拟数据")
-            return self._generate_mock_data(symbols, start_date, end_date, frequency)
-        
-        result = {}
-        
-        for symbol in symbols:
-            cache_key = f"{symbol}_{start_date}_{end_date}_{frequency}"
-            
-            if cache_key in self._cache:
-                result[symbol] = self._cache[cache_key]
-                continue
-        
-        return result
-    
     def _generate_mock_data(self, 
                            symbols: List[str], 
                            start_date: str, 
