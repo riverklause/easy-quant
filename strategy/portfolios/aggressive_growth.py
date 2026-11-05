@@ -1,6 +1,11 @@
 """
 激进成长组合
 专注于高成长性股票的策略组合
+
+注意：本文件是**配置草稿**。`add_strategy(indicators=[...])` 里的指标名只是标签，
+不参与指标装配（装配走 IndicatorSpec + ensure_indicators）；它引用的策略 id
+（momentum_strategy / growth_factor_strategy / breakout_strategy）尚未实现，
+直接注册到 StrategyManager 执行会得到空结果。
 """
 
 from typing import List, Dict, Optional

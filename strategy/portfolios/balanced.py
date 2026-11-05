@@ -1,6 +1,10 @@
 """
 平衡型组合
 结合成长和价值策略的平衡投资组合
+
+注意：本文件是**配置草稿**。`indicators` 只是标签，不参与指标装配；
+它引用的策略 id（value_strategy / momentum_strategy / quality_strategy /
+technical_trend_strategy）尚未实现，直接注册到 StrategyManager 执行会得到空结果。
 """
 
 from typing import List, Dict, Optional
