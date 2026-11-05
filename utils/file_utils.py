@@ -11,15 +11,17 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+import logging
 
 from .settings import settings
-from .logger import logger
+
+logger = logging.getLogger(__name__)
 
 class FileUtils:
     """文件操作工具类"""
     
     def __init__(self):
-        self.data_base_path = settings.DATA_BASE_PATH
+        self.data_base_path = Path(settings.data.data_dir)
     
     def ensure_dir(self, dir_path: Path) -> Path:
         """确保目录存在"""
@@ -222,7 +224,7 @@ def list_files(dir_path: Path, pattern: str = "*") -> List[Path]:
 
 def get_data_file_path(data_type: str, filename: str) -> Path:
     """获取数据文件路径"""
-    return settings.DATA_BASE_PATH / data_type / filename
+    return Path(settings.data.data_dir) / data_type / filename
 
 if __name__ == "__main__":
     # 测试文件工具功能
@@ -232,7 +234,7 @@ if __name__ == "__main__":
         'volume': [1000000, 500000, 800000]
     })
     
-    test_file = settings.DATA_BASE_PATH / 'test' / 'test_data.parquet'
+    test_file = Path(settings.data.data_dir) / 'test' / 'test_data.parquet'
     
     # 测试保存和读取
     save_parquet(test_df, test_file)
@@ -241,5 +243,5 @@ if __name__ == "__main__":
     print(loaded_df)
     
     # 测试文件列表
-    files = list_files(settings.DATA_BASE_PATH)
+    files = list_files(Path(settings.data.data_dir))
     print(f"数据目录文件数量: {len(files)}")

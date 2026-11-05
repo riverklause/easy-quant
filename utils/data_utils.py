@@ -7,8 +7,9 @@ import numpy as np
 from typing import List, Dict, Any, Optional, Union
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.impute import SimpleImputer
+import logging
 
-from .logger import logger
+logger = logging.getLogger(__name__)
 
 class DataUtils:
     """数据处理工具类"""

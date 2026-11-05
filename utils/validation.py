@@ -6,8 +6,9 @@ import pandas as pd
 import numpy as np
 from typing import List, Dict, Any, Optional, Callable
 from datetime import datetime
+import logging
 
-from .logger import logger
+logger = logging.getLogger(__name__)
 
 class ValidationUtils:
     """数据验证工具类"""

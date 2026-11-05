@@ -1,111 +1,71 @@
+"""日志配置：统一到 stdlib logging。
+
+约定：
+- 库代码用 `logging.getLogger(__name__)`，**不要**在这里拿单例；
+- 入口（web/app.py、各 `__main__`）调一次 `configure_logging()`；
+- import 阶段不做任何配置（否则测试会建 logs/、装 handler）。
 """
-系统日志模块
-支持多级别日志记录和文件输出
-"""
+
 import logging
 import sys
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from datetime import datetime
+from typing import Optional
 
 from .settings import settings
 
-class Logger:
-    """系统日志类"""
-    
-    def __init__(self, name='easy_quant', log_level=None):
-        self.name = name
-        self.log_level = log_level or settings.LOG_LEVEL
-        self.logger = self._setup_logger()
-        
-    def _setup_logger(self):
-        """配置日志器"""
-        logger = logging.getLogger(self.name)
-        logger.setLevel(getattr(logging, self.log_level.upper()))
-        
-        # 清除已有处理器
-        logger.handlers.clear()
-        
-        # 添加控制台处理器
-        console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setLevel(getattr(logging, self.log_level.upper()))
-        
-        # 添加文件处理器
-        log_dir = settings.DATA_BASE_PATH / 'logs'
-        log_dir.mkdir(parents=True, exist_ok=True)
-        
-        log_file = log_dir / f'easy_quant_{datetime.now().strftime("%Y%m%d")}.log'
-        file_handler = logging.FileHandler(log_file, encoding='utf-8')
-        file_handler.setLevel(logging.INFO)
-        
-        # 设置日志格式
-        formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
-        console_handler.setFormatter(formatter)
-        file_handler.setFormatter(formatter)
-        
-        # 添加处理器
-        logger.addHandler(console_handler)
-        logger.addHandler(file_handler)
-        
-        return logger
-    
-    def debug(self, message):
-        """调试级别日志"""
-        self.logger.debug(message)
-        
-    def info(self, message):
-        """信息级别日志"""
-        self.logger.info(message)
-        
-    def warning(self, message):
-        """警告级别日志"""
-        self.logger.warning(message)
-        
-    def error(self, message):
-        """错误级别日志"""
-        self.logger.error(message)
-        
-    def critical(self, message):
-        """严重级别日志"""
-        self.logger.critical(message)
+_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+_DATEFMT = "%Y-%m-%d %H:%M:%S"
 
-# 创建全局日志实例
-logger = Logger()
+_CONFIGURED = False
 
-# 便捷访问函数
-def get_logger(name=None):
-    """获取日志器实例"""
-    if name:
-        return Logger(name)
-    return logger
 
-def log_performance(func):
-    """性能日志装饰器"""
-    def wrapper(*args, **kwargs):
-        start_time = datetime.now()
-        result = func(*args, **kwargs)
-        end_time = datetime.now()
-        execution_time = (end_time - start_time).total_seconds()
-        
-        logger.info(f"函数 {func.__name__} 执行时间: {execution_time:.4f} 秒")
-        return result
-    return wrapper
+def configure_logging(level: Optional[str] = None,
+                      log_dir: Optional[str] = None,
+                      max_size_mb: Optional[int] = None,
+                      backup_count: Optional[int] = None,
+                      force: bool = False) -> logging.Logger:
+    """配置 root logger（幂等）。
+
+    只挂 root：各模块的 `getLogger(__name__)` 靠传播拿到 handler。
+    """
+    global _CONFIGURED
+    root = logging.getLogger()
+    if _CONFIGURED and not force:
+        return root
+
+    resolved = str(level or settings.log.level or "INFO").upper()
+    root.setLevel(getattr(logging, resolved, logging.INFO))
+
+    for handler in list(root.handlers):
+        root.removeHandler(handler)
+
+    formatter = logging.Formatter(_FORMAT, datefmt=_DATEFMT)
+
+    stream = logging.StreamHandler(sys.stdout)
+    stream.setFormatter(formatter)
+    root.addHandler(stream)
+
+    directory = Path(log_dir or settings.log.dir or "logs")
+    directory.mkdir(parents=True, exist_ok=True)
+    file_handler = RotatingFileHandler(
+        directory / "easy_quant.log",
+        maxBytes=int(max_size_mb or settings.log.max_size) * 1024 * 1024,
+        backupCount=backup_count or settings.log.backup_count,
+        encoding="utf-8",
+    )
+    file_handler.setFormatter(formatter)
+    root.addHandler(file_handler)
+
+    _CONFIGURED = True
+    return root
+
+
+def get_logger(name: Optional[str] = None) -> logging.Logger:
+    """兼容旧调用：返回 stdlib logger。"""
+    return logging.getLogger(name) if name else logging.getLogger()
+
 
 if __name__ == "__main__":
-    # 测试日志功能
-    logger.debug("这是一条调试信息")
-    logger.info("这是一条普通信息")
-    logger.warning("这是一条警告信息")
-    logger.error("这是一条错误信息")
-    
-    # 测试性能日志装饰器
-    @log_performance
-    def test_function():
-        import time
-        time.sleep(0.1)
-        return "测试完成"
-    
-    result = test_function()
-    print(result)
+    configure_logging(level="DEBUG")
+    logging.getLogger(__name__).info("日志配置完成")

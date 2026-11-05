@@ -41,6 +41,7 @@
 | L8 | 每 bar 重算整个历史窗口（O(T²)） | 回退预计算 → 只有 L8 红（`775 != 40`），L8a 仍绿 | ✓ |
 | L8a | 预计算切片越界（看到未来 / 值不符） | 保护性灯（当前即绿） | ✓ |
 | L9 | ADX 条件取整行 Series 而非 `adx` 列 | 回退成 `result.iloc[-1]` → 只有 L9 红（Series 歧义布尔） | ✓ |
+| LG0 | `utils/` 下模块导入即崩（`settings.LOG_LEVEL` / `DATA_BASE_PATH`） | 回退 `utils/logger.py` → 4 个 LG0 全红（`AttributeError: LOG_LEVEL`）；回退 `file_utils` 的两处引用 → 只有 LG0[file_utils] 红（`DATA_BASE_PATH`） | ✓ |
 
 R1 之后，L4b / L4b2 的绿依赖 L4c 的声明式装配；本表记录的是各自独立修复时的回退结果。
 

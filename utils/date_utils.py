@@ -8,8 +8,6 @@ from datetime import datetime, timedelta, time
 from typing import List, Tuple, Optional
 import holidays
 
-from .logger import logger
-
 class DateUtils:
     """日期时间工具类"""
     

@@ -4,11 +4,13 @@
 """
 import pickle
 import time
+import logging
 from typing import Any, Optional
 import redis
 
 from .settings import settings
-from .logger import logger
+
+logger = logging.getLogger(__name__)
 
 class CacheManager:
     """缓存管理器"""

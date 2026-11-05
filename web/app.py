@@ -26,6 +26,8 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+from utils.logger import configure_logging
+
 data_state_manager = None
 data_manager = None
 
@@ -297,6 +299,7 @@ def init_data_sources(config=None):
 
 def start_server(host='::', port=8050, debug=True):
     """启动服务器"""
+    configure_logging()
     init_data_sources()
 
     # Windows 默认对 IPv6 socket 启用 IPV6_V6ONLY，导致绑定 '::' 时仅监听
