@@ -7,7 +7,11 @@ from dash import html, dcc, callback, Input, Output, State
 import dash_bootstrap_components as dbc
 import pandas as pd
 
+import logging
+
 from data.storage.local_storage import LocalStorageManager
+
+logger = logging.getLogger(__name__)
 
 # 元数据路径统一由 LocalStorageManager 决定：data/meta/{name}.parquet
 SCREENER_CONFIG_FILE = LocalStorageManager().build_meta_path("ScreenerConfig")
@@ -19,7 +23,8 @@ def get_screener_configs():
         try:
             df = pd.read_parquet(SCREENER_CONFIG_FILE)
             return df.to_dict('records') if not df.empty else []
-        except:
+        except Exception:
+            logger.exception('读取选股配置失败: %s', SCREENER_CONFIG_FILE)
             return []
     return []
 

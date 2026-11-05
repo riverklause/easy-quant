@@ -39,9 +39,9 @@ def get_stock_list_display():
                         style={'display': 'flex', 'flexWrap': 'wrap'},
                     ),
                 ], style={'padding': '10px 0'})
-        except:
-            pass
-    
+        except Exception:
+            logger.exception('读取关注列表失败: %s', STOCK_LIST_FILE)
+
     return html.P("暂无关注的股票，可点击添加股票按钮添加股票", className="text-muted")
 
 
