@@ -154,6 +154,14 @@ def main() -> None:
             )
             print(f"{name:22s}{cells}")
 
+    print("\nIC 衰减（非重叠：每 h 个交易日取一个，n 即新息样本数）")
+    with _quiet_ic_logger():
+        for name in factors.ACTIVE:
+            decay = ic_decay(panels[name], close, horizons=HORIZONS,
+                             min_stocks=MIN_STOCKS, stride=True)
+            rows = [f"{d.mean_ic:+7.3f}({d.n:3d})" for d in decay.itertuples()]
+            print(f"{name:22s}" + "".join(f"{r:>13s}" for r in rows))
+
 
 if __name__ == "__main__":
     main()
