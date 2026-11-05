@@ -1,0 +1,8 @@
+backtest
+data
+indicators
+research
+screener
+strategy
+utils
+web
