@@ -5,6 +5,8 @@
 """
 
 import logging
+from dataclasses import dataclass
+from math import isnan, sqrt
 
 import pandas as pd
 
@@ -42,3 +44,42 @@ def rank_ic(factor: pd.DataFrame,
         logger.warning("丢弃 %d 个截面（有效样本 < %d）", too_small, min_stocks)
 
     return ic.dropna()
+
+
+@dataclass(frozen=True)
+class ICSummary:
+    """IC 序列的描述统计。
+
+    t_stat 只是描述量（ir * sqrt(n)），**不作为通过/不通过的门槛**：
+    阈值会随样本窗口翻转，门槛属于报告，不属于断言。
+    """
+    n: int
+    mean: float
+    std: float          # ddof=1
+    ir: float           # mean / std
+    positive_ratio: float
+    t_stat: float
+    autocorr1: float
+
+
+def ic_summary(ic: pd.Series) -> ICSummary:
+    """汇总一条 IC 序列。空序列返回 n=0、其余 NaN，不抛异常。"""
+    ic = ic.dropna()
+    n = len(ic)
+    if n == 0:
+        nan = float("nan")
+        return ICSummary(0, nan, nan, nan, nan, nan, nan)
+
+    mean = float(ic.mean())
+    std = float(ic.std(ddof=1))
+    ir = mean / std if std else float("nan")
+
+    return ICSummary(
+        n=n,
+        mean=mean,
+        std=std,
+        ir=ir,
+        positive_ratio=float((ic > 0).mean()),
+        t_stat=ir * sqrt(n) if not isnan(ir) else float("nan"),
+        autocorr1=float(ic.autocorr(lag=1)),
+    )

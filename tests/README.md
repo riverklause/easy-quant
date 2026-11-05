@@ -65,6 +65,9 @@
 | FL5b | field 不在 output_fields → ValueError（不是 pandas KeyError） | 去掉 check → 只有 FL5b 红（抛出 `KeyError: 'bogus'`，pytest.raises(ValueError) 不匹配） | ✓ |
 | FL6 | 目录内每个因子：价格整体乘 100 → 因子面板不变（尺度不变）；参数化到 `factors.__all__`，新增因子自动继承 | atr_pct_factor 去掉 /close → **只有 `[atr_pct_factor]` 红**（ATR 正好乘 100，`0.144` vs `14.47`）；cci_factor 混入 `+close` → **只有 `[cci_factor]` 红**，其余 7 个参数绿（参数化按因子隔离，不是一个大 assert） | ✓ |
 | FL6-macd | 同上，覆盖 `macd_hist_pct_factor`（价格量纲必须归一化） | 先 `return hist`（不除 close）→ **只有 `[macd_hist_pct_factor]` 红**（缩放后数值正好 100 倍）；补 `/ close` → 绿。这是参数化后第一次抓到新因子漏归一化 | ✓ |
+| FL7 | `ic_summary` 精确算术钉住 ddof=1 与 IR 定义 | `ic.std(ddof=1)` → `ddof=0` → **只有 FL7 红**（std 0.1027 vs 期望 0.1258，IR 差 22%） | ✓ |
+| FL7b | `ic_decay` 结构：h=1 时 IC=1 且随 horizon 严格下降（`diff()<0`），n 递减 | 所有 horizon 固定成 1 → **只有 FL7b 红**（mean_ic 全等 `1.0 1.0 1.0 1.0`，严格下降失败） | ✓ |
+| FL7c | `ic_summary` 空序列不抛：n=0、其余 NaN | —（保护性灯，未单独立回退） | ✓ |
 
 R1 之后，L4b / L4b2 的绿依赖 L4c 的声明式装配；本表记录的是各自独立修复时的回退结果。
 
