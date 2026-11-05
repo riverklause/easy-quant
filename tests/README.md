@@ -45,7 +45,7 @@
 | LG1 | `configure_logging` 重复调用叠加 handler（保护性灯） | 去掉 handler 清理 → `assert 6 == 2`（pytest 自有 4 个 + 我们的 2 个）；只去掉 `_CONFIGURED` 仍绿 | ✓ |
 | LG1b | 摘掉 handler 未 `close()`，泄漏文件句柄（保护性灯） | 去掉 `handler.close()` → 只有 LG1b 红（`stream is None` 断言失败），LG1 仍绿 | ✓ |
 | LG2 | utils/ 下第三方 import 必须在 requirements.txt 里声明 | 删掉 `holidays` 行 → 只有 LG2 红；反向（requirements 写了没人用）暂未覆盖 | ✓ |
-| LG3 | `utils.date_utils` 可导入（依赖 `holidays`） | 装包后自动生效；目前以 skipped 形式存在，不藏着 | ✓（skipped）|
+| LG3 | `utils.date_utils` 可导入（依赖 `holidays`） | holidays 0.108 已装；LG0 同时纳入 date_utils | ✓ |
 | S1 | `StockScreener` 暴露条件失败（不静默吞） | 去掉 `logger.exception` + `condition_errors` 计数 + `fail_fast` 开关 → S1 两测试红（AttributeError / TypeError） | ✓ |
 | S2 | `StochasticOversold/Overbought` 可评估（复用 KDJ） | 回退成原 `Stochastic` 不存在的 import → S2 两测试都是 ModuleNotFoundError 红 | ✓ |
 | M1 | `run()` / `run_async()` 两条入口产出相同结果（合并后成同一实现） | 保护性灯；当前即绿，合并后仍绿（证明"结果一致"而不是"实现方式"） | ✓ |
@@ -79,7 +79,7 @@ R1 之后，L4b / L4b2 的绿依赖 L4c 的声明式装配；本表记录的是�
 
 ### 已知缺口
 
-- `utils/date_utils.py` 依赖 `holidays`，已在 `requirements.txt` 声明但当前环境未安装：`LG3` 以 skipped 形式存在，装包后自动启用，届时 `LG0` 可把该模块加回导入清单。
+- 无（`date_utils` 的 `holidays` 依赖已落地）。
 
 运行：
 

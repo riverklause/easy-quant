@@ -2,11 +2,11 @@
 
 LG0 今天红在模块级执行旧 Logger()，而 Settings 没有 LOG_LEVEL /
 DATA_BASE_PATH 属性 → 导入 utils/logger.py 即抛 AttributeError。
-修复后 LG0 覆盖 4 个模块（date_utils 暂不在内，见 LG2/LG3）。
+修复后 LG0 覆盖 4 个模块（date_utils 依赖 holidays，见 LG2/LG3）。
 
 LG2/LG3 是 utils/ 目录的依赖健康网：
   - LG2 红灯：第三方 import 在 requirements.txt 里没声明；
-  - LG3 红灯（目前 skipped）：holidays 装完后自动覆盖 date_utils。
+  - LG3：holidays 已安装，date_utils 由 LG0 和 LG3 双重点名。
 """
 
 import ast
@@ -48,6 +48,7 @@ def _third_party_imports(path: Path) -> set[str]:
     "utils.logger",
     "utils.file_utils",
     "utils.data_utils",
+    "utils.date_utils",
 ])
 def test_LG0_utils_modules_import(mod):
     importlib.import_module(mod)

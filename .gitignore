@@ -3,6 +3,7 @@ utils/settings.py
 
 # 虚拟环境
 .venv/
+.venv-lock/
 venv/
 
 # 缓存与编译产物
