@@ -61,6 +61,9 @@
 | FL4 | 标签随因子单调递增 ⇒ 五档平均前瞻收益必须单调递增（含 Q5-Q1 > 0） | 与 FL4c 同回退：method="average" → FL4 仍绿（连续值无并列）、FL4c 红 | ✓ |
 | FL4b | 10 列但某日成对有效只有 2 → 该日整行丢弃（与 rank_ic 同一 min_stocks 语义） | 删掉 `result.where(~too_small)` 过滤 → **只有 FL4b 红**（该行被保留在 q.index 里），FL4/FL4c 不受影响 | ✓ |
 | FL4c | 全并列值 + method="first" → 按列顺序切五档，无空档 | 改成默认 method="average" → **只有 FL4c 红**（Q2/Q3/Q4/Q5 NaN），FL4/FL4b 不受影响 | ✓ |
+| FL5 | adapter 拼宽面板 + 因果性（截断重算与全量切片一致） | T3 已钉住每个指标因果，adapter 只循环调用，这盏灯是保护性的（今天直接绿） | ✓ |
+| FL5b | field 不在 output_fields → ValueError（不是 pandas KeyError） | 去掉 check → 只有 FL5b 红（抛出 `KeyError: 'bogus'`，pytest.raises(ValueError) 不匹配） | ✓ |
+| FL6 | 四个无量纲因子：价格整体乘 100 → 因子面板不变（尺度不变） | atr_pct_factor 去掉 /close 归一化 → **只有 FL6 红**（ATR 正好乘 100，`0.144` vs `14.47`），其他因子不受影响 | ✓ |
 
 R1 之后，L4b / L4b2 的绿依赖 L4c 的声明式装配；本表记录的是各自独立修复时的回退结果。
 
