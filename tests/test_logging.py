@@ -46,7 +46,6 @@ def _third_party_imports(path: Path) -> set[str]:
 
 @pytest.mark.parametrize("mod", [
     "utils.logger",
-    "utils.validation",
     "utils.file_utils",
     "utils.data_utils",
 ])

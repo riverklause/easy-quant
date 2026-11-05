@@ -151,8 +151,7 @@ easy-quant/
 ├── utils/                  # ✅ 工具模块
 │   ├── symbol_utils.py     # ✅ 股票代码工具
 │   ├── settings.py         # ✅ 配置管理
-│   ├── data_utils.py       # 数据处理工具
-│   └── validation.py       # 验证工具
+│   └── data_utils.py       # 数据处理工具
 └── visualization/          # 可视化模块
 ```
 
