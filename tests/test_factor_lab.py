@@ -395,3 +395,13 @@ def test_FL9b_factor_correlation_uses_the_same_definition():
     result = factor_correlation({"A": a, "B": b}, min_stocks=3)
 
     assert result.matrix.loc["A", "B"] == pytest.approx(-1.0)
+
+
+# ===== FL10：ACTIVE 子集必须真的来自目录 =====
+
+def test_FL10_active_subset_belongs_to_catalogue():
+    """ACTIVE 是人工维护的剪枝名单——最容易在改名后悄悄失效，这里钉住来源。"""
+    from research.factor_lab import factors as _f
+
+    assert len(_f.ACTIVE) == len(set(_f.ACTIVE)) > 0        # 非空、无重复
+    assert set(_f.ACTIVE) <= set(_f.__all__)                # 每个名字都在目录里

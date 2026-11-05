@@ -31,6 +31,10 @@ __all__ = [
     "cci_factor", "kdj_k_factor", "macd_hist_pct_factor", "rsi_factor", "wr_factor",
 ]
 
+# 按"相关 > 0.85 视为同一因子"剪枝后的子集：每个维度只留一个代表。
+# 保留 __all__ 全部（照旧受 FL6 参数化检查），这里只是报告/合成时的默认输入。
+ACTIVE = ["adx_factor", "atr_pct_factor", "bias_factor", "rsi_factor"]
+
 
 # ---- 直接无量纲（output_fields 里是 0–100 / −100–0 等范围量）---------
 

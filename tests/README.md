@@ -73,6 +73,7 @@
 | FL8c | 复用 `min_stocks`：某日成对样本 2 < 5 → 该日不进平均、n 少 1、矩阵对称 | 去掉 `.where(paired_counts(...) >= min_stocks)` → **只有 FL8c 红**（`6 != 5`），FL8/FL8b 绿 | ✓ |
 | FL9 | `rank_ic` 的秩在**成对支撑集**上取（A 全支撑 [1..6]、B 只 3 只且反向 → 必须是 −1.0） | `paired_rank_corr` 去掉 `.where(mask)` → FL9/FL9b 红（回到 −0.9934），其余 105 绿 | ✓ |
 | FL9b | `factor_correlation` 与 `rank_ic` 共用**同一份**实现，不是各自恰好算对 | `_cross_section_rank_corr` 改回自己取秩 → **只有 FL9b 红**、FL9 绿 | ✓ |
+| FL10 | `ACTIVE` 剪枝名单非空、无重复、每个名字都在 `__all__` 里 | —（保护性灯：名单本身是数据，没有对应可回退的实现） | ✓ |
 
 R1 之后，L4b / L4b2 的绿依赖 L4c 的声明式装配；本表记录的是各自独立修复时的回退结果。
 
