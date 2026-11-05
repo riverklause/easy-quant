@@ -185,3 +185,72 @@ def test_FL4c_ties_are_split_deterministically():
     # "average" 会让所有值落同一档 → 其余四档 NaN，行被 dropna(how='all') 保留
     # 但列是 NaN；"first" 按顺序切成 2/2/2/2/2，五档都有值
     assert not q.isna().any().any()
+
+
+# ===== FL5：适配器 + FL6：无量纲因子目录 + 尺度不变 =====
+
+def _ohlcv_stock_data(symbols=("A", "B", "C"), rows: int = 40,
+                      seed: int = 0) -> dict:
+    """符合多数技术指标 data_fields 要求的 OHLCV 数据。"""
+    rng = np.random.default_rng(seed)
+    idx = pd.bdate_range("2024-01-01", periods=rows)
+    frames = {}
+    for k, sym in enumerate(symbols):
+        drift = np.arange(rows) * 0.05 + k
+        close = 10.0 + drift + rng.normal(0, 0.2, rows)
+        high = close + np.abs(rng.normal(0, 0.1, rows))
+        low = close - np.abs(rng.normal(0, 0.1, rows))
+        vol = 1000 + np.abs(rng.normal(0, 200, rows))
+        frames[sym] = pd.DataFrame({
+            "open": close - 0.05, "high": high, "low": low,
+            "close": close, "volume": vol,
+        }, index=idx)
+    return frames
+
+
+def test_FL5_adapter_builds_wide_panel_and_is_causal():
+    """adapter 不引入面板级未来数据；截断重算与全量切片一致（与 T3 同范式）。"""
+    from indicators.technical.momentum.rsi import RSI
+    from research.factor_lab.adapter import indicator_factor
+
+    data = _ohlcv_stock_data()
+    rsi = RSI(period=10)
+    full = indicator_factor(data, rsi, "rsi")
+
+    for t in (15, 30, 39):
+        truncated = indicator_factor(
+            {sym: df.iloc[:t] for sym, df in data.items()}, rsi, "rsi")
+        pd.testing.assert_frame_equal(truncated, full.iloc[:t], check_names=False)
+
+
+def test_FL5b_adapter_rejects_unknown_field():
+    """field 不在 indicator.output_fields 里 → ValueError（T1 契约从测试变生产用）。"""
+    from indicators.technical.momentum.rsi import RSI
+    from research.factor_lab.adapter import indicator_factor
+
+    with pytest.raises(ValueError, match="RSI_10"):
+        indicator_factor(_ohlcv_stock_data(), RSI(period=10), "bogus")
+
+
+def test_FL6_scale_invariance():
+    """无量纲因子：价格整体乘 100 → 因子面板不变（NaN 对齐允许）。"""
+    from research.factor_lab import factors
+
+    data = _ohlcv_stock_data()
+    scaled = {sym: df.assign(high=df.high * 100, low=df.low * 100,
+                              close=df.close * 100, open=df.open * 100)
+              for sym, df in data.items()}
+
+    for name, fn in [
+        ("rsi", factors.rsi_factor),
+        ("atr_pct", factors.atr_pct_factor),
+        ("bias", factors.bias_factor),
+        ("bollinger_pb", factors.bollinger_pb_factor),
+    ]:
+        orig = fn(data)
+        scaled_out = fn(scaled)
+        # 对齐 NaN 后断言近似相等
+        aligned = orig.fillna(0).to_numpy()
+        scaled_arr = scaled_out.fillna(0).to_numpy()
+        assert np.allclose(aligned, scaled_arr, equal_nan=True), \
+            f"{name} 在价格乘 100 后变化了（违反尺度不变）"
