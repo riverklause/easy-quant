@@ -17,7 +17,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from research.factor_lab import factors
-from research.factor_lab.cross_section import paired_counts
+from research.factor_lab.cross_section import factor_correlation, paired_counts
 from research.factor_lab.ic import ic_summary, rank_ic
 from research.factor_lab.labels import forward_returns
 from research.factor_lab.panel import to_panel
@@ -89,9 +89,11 @@ def main() -> None:
     ic_logger = logging.getLogger("research.factor_lab.ic")
     previous_level = ic_logger.level
     ic_logger.setLevel(logging.ERROR)          # 丢弃数已进表格，不再逐条刷屏
+    panels: dict[str, pd.DataFrame] = {}
     try:
         for name in factors.__all__:
             panel = getattr(factors, name)(bars)
+            panels[name] = panel
             ic = rank_ic(panel, fwd, min_stocks=MIN_STOCKS)
             dropped = int((paired_counts(panel, fwd) < MIN_STOCKS).sum())
             s = ic_summary(ic)
@@ -105,6 +107,14 @@ def main() -> None:
                   f"{s.ir:+7.3f} {s.positive_ratio:6.0%} {s.t_stat:+6.2f}")
     finally:
         ic_logger.setLevel(previous_level)     # 恢复：别把调用方的日志级别改坏
+
+    corr = factor_correlation(panels, min_stocks=MIN_STOCKS)
+    short = {name: name.removesuffix("_factor") for name in panels}
+    print("\n因子互相关（逐日截面 Spearman 均值；正负号跟着各自的原始刻度，"
+          "RSI 与 WR 同号是正常的）")
+    print(corr.matrix.rename(index=short, columns=short).round(2).to_string())
+    print(f"有效截面数 {int(corr.n.to_numpy().min())}~{int(corr.n.to_numpy().max())}"
+          f"（与上表 n 同源；相关无法定义的截面不计入）")
 
 
 if __name__ == "__main__":
