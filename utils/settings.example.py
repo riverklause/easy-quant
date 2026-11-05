@@ -107,7 +107,7 @@ class RiskConfig:
 
 @dataclass
 class RedisConfig:
-    """Redis配置"""
+    """Redis 配置（预留：当前无消费者，utils/cache.py 已删除）"""
     host: str = "localhost"
     port: int = 6379
     db: int = 0

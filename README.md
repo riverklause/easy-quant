@@ -446,7 +446,7 @@ python examples/demo_unified_strategy.py
 - **异步支持**: asyncio, aiolimiter
 - **Web框架**: FastAPI, uvicorn
 - **测试框架**: pytest, pytest-asyncio
-- **缓存**: redis
+- **缓存**: diskcache（Dash 后台回调）
 - **日志**: loguru
 - **代码质量**: black, flake8, mypy
 

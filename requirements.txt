@@ -22,8 +22,7 @@ dash-extensions>=1.0.0
 plotly>=5.18.0
 
 # 缓存
-diskcache>=0.1.0
-redis>=4.5.0
+diskcache>=0.1.0   # Dash 后台回调使用（web/app.py 的 ./.cache）
 
 # 测试
 pytest>=7.4.0
