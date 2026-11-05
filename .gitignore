@@ -1,3 +1,4 @@
+# 本地实盘配置（含 Futu 账号 / WebSocket key；4adfada 已从仓库删除），禁止入库
 utils/settings.py
 
 # 虚拟环境
