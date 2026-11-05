@@ -44,3 +44,28 @@ def test_LG1_configure_logging_is_idempotent(tmp_path):
     finally:
         root.handlers[:] = saved_handlers
         root.setLevel(saved_level)
+
+
+def test_LG1b_force_close_does_not_leak_handlers(tmp_path):
+    """保护性灯：被摘掉的 handler 必须 close()，否则文件句柄泄漏。
+
+    removeHandler() 只摘不关，force=True 每调一次就丢一个打开的文件。
+    """
+    from utils.logger import configure_logging
+
+    root = logging.getLogger()
+    saved_handlers, saved_level = root.handlers[:], root.level
+    try:
+        configure_logging(level="DEBUG", log_dir=tmp_path, force=True)
+        removed = []
+        for _ in range(3):
+            removed.extend(root.handlers[:])
+            configure_logging(level="DEBUG", log_dir=tmp_path, force=True)
+        assert len(root.handlers) == 2
+        file_handlers = [h for h in removed if isinstance(h, RotatingFileHandler)]
+        assert len(file_handlers) == 3
+        assert all(h.stream is None for h in file_handlers), \
+            "摘掉的 handler 未关闭，文件句柄泄漏"
+    finally:
+        root.handlers[:] = saved_handlers
+        root.setLevel(saved_level)

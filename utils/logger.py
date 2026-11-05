@@ -39,6 +39,7 @@ def configure_logging(level: Optional[str] = None,
 
     for handler in list(root.handlers):
         root.removeHandler(handler)
+        handler.close()
 
     formatter = logging.Formatter(_FORMAT, datefmt=_DATEFMT)
 
