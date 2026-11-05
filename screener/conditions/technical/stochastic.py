@@ -12,12 +12,11 @@ class StochasticCondition(TechnicalCondition):
         self.k_period = k_period
 
     def _calculate_indicator(self, data):
-        from indicators.technical.momentum.stochastic import Stochastic
-        stoch = Stochastic(period=self.k_period)
-        result = stoch.calculate(data)
+        from indicators.technical.momentum.kdj import KDJ
+        result = KDJ(k_period=self.k_period).calculate(data)
+        # KDJ.output_fields = ['k', 'd', 'j']，%K 就是随机指标
         if hasattr(result, 'iloc'):
-            value = result.iloc[-1]
-            return value
+            return float(result["k"].iloc[-1])
         return result
 
 

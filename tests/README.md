@@ -46,6 +46,8 @@
 | LG1b | 摘掉 handler 未 `close()`，泄漏文件句柄（保护性灯） | 去掉 `handler.close()` → 只有 LG1b 红（`stream is None` 断言失败），LG1 仍绿 | ✓ |
 | LG2 | utils/ 下第三方 import 必须在 requirements.txt 里声明 | 删掉 `holidays` 行 → 只有 LG2 红；反向（requirements 写了没人用）暂未覆盖 | ✓ |
 | LG3 | `utils.date_utils` 可导入（依赖 `holidays`） | 装包后自动生效；目前以 skipped 形式存在，不藏着 | ✓（skipped）|
+| S1 | `StockScreener` 暴露条件失败（不静默吞） | 去掉 `logger.exception` + `condition_errors` 计数 + `fail_fast` 开关 → S1 两测试红（AttributeError / TypeError） | ✓ |
+| S2 | `StochasticOversold/Overbought` 可评估（复用 KDJ） | 回退成原 `Stochastic` 不存在的 import → S2 两测试都是 ModuleNotFoundError 红 | ✓ |
 
 R1 之后，L4b / L4b2 的绿依赖 L4c 的声明式装配；本表记录的是各自独立修复时的回退结果。
 
