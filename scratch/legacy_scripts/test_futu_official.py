@@ -8,7 +8,7 @@ import time
 import pandas as pd
 
 # 添加项目路径
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 def test_futu_official():
     """基于官方文档的正确测试"""

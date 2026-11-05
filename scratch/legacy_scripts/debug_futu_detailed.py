@@ -7,7 +7,7 @@ import os
 import time
 
 # 添加项目路径
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 def debug_futu_detailed():
     """详细调试Futu API"""
