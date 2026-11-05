@@ -58,6 +58,9 @@
 | FL2b | 单调变换不改变秩 → RankIC 不变（钉住 Spearman 秩相关） | 去掉 `.rank(axis=1)` → 只有 FL2b 红（Pearson 对 `exp` 敏感，Series 100% 不同），FL2 不受影响 | ✓ |
 | FL3 | 3 只股票 + min_stocks=5 → 全部丢弃 + 必须留下 warning 日志 | 回退 1（不做 min_stocks 过滤）→ FL3 和 FL3b 都红；FL3b 守单位 | ✓ |
 | FL3b | 10 列但某日成对有效只有 2 → 该日丢弃（钉住有效样本单位） | 回退 2（counts = len(common) 数列数）→ **只有 FL3b 红**（assert 5 == 4），FL3 仍绿（common=3 本来就 < 5） | ✓ |
+| FL4 | 标签随因子单调递增 ⇒ 五档平均前瞻收益必须单调递增（含 Q5-Q1 > 0） | 与 FL4c 同回退：method="average" → FL4 仍绿（连续值无并列）、FL4c 红 | ✓ |
+| FL4b | 10 列但某日成对有效只有 2 → 该日整行丢弃（与 rank_ic 同一 min_stocks 语义） | 删掉 `result.where(~too_small)` 过滤 → **只有 FL4b 红**（该行被保留在 q.index 里），FL4/FL4c 不受影响 | ✓ |
+| FL4c | 全并列值 + method="first" → 按列顺序切五档，无空档 | 改成默认 method="average" → **只有 FL4c 红**（Q2/Q3/Q4/Q5 NaN），FL4/FL4b 不受影响 | ✓ |
 
 R1 之后，L4b / L4b2 的绿依赖 L4c 的声明式装配；本表记录的是各自独立修复时的回退结果。
 

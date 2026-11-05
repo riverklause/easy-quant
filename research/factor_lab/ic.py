@@ -8,6 +8,8 @@ import logging
 
 import pandas as pd
 
+from .cross_section import paired_counts
+
 logger = logging.getLogger(__name__)
 
 
@@ -29,8 +31,8 @@ def rank_ic(factor: pd.DataFrame,
     left = factor[common]
     right = forward_returns[common]
 
-    # 成对有效样本：任一侧缺失都不算（FL3 契约钉住的单位）
-    counts = (left.notna() & right.notna()).sum(axis=1)
+    # 成对有效样本：与分档共用同一个定义
+    counts = paired_counts(left, right)
 
     ic = left.rank(axis=1).corrwith(right.rank(axis=1), axis=1)
     ic = ic.where(counts >= min_stocks)
