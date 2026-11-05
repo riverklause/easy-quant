@@ -27,8 +27,8 @@ strategy_manager = StrategyManager()
 # 连接所有数据源
 data_manager.connect_all()
 
-# 检查连接状态
-health_status = data_manager.health_check()
+# 检查连接状态（health_check 是 async，需在异步上下文中调用）
+health_status = await data_manager.health_check()
 print(f"数据源健康状态: {health_status}")
 ```
 

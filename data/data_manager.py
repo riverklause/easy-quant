@@ -81,8 +81,9 @@ class DataManager:
             
             # 验证Futu与Futu_RT配置项(Futu_RT与Futu配置相同)
             required_fields = ['Futu_Host', 'Futu_Port', 'Futu_TrdEnv']
-            if all(field not in config_data.futu for field in required_fields):
-                raise ImportError(f"settings.py中缺少Futu配置项: {field}")
+            for field in required_fields:
+                if field not in config_data.futu:
+                    raise ImportError(f"settings.py中缺少Futu配置项: {field}")
             
             # 验证yfinance配置项
             required_fields = ['yfinance_proxy']
@@ -370,18 +371,17 @@ class DataManager:
     
     # 数据源必须明确指定
     
-    def health_check(self) -> Dict[str, bool]:
-        """检查各数据源的健康状态"""
-        health_status = {}
-        
+    async def health_check(self) -> Dict[str, Dict[str, Any]]:
+        """检查各数据源健康状态：返回每个源的 health_check() 结果，异常时记 False。"""
+        health_status: Dict[str, Any] = {}
+
         for client_name, client in self.clients.items():
             try:
-                is_healthy = client.health_check()
-                health_status[client_name] = is_healthy
+                health_status[client_name] = await client.health_check()
             except Exception:
                 logger.exception("检查%s健康状态失败", client_name)
-                health_status[client_name] = False
-        
+                health_status[client_name] = {"connected": False, "data_source": client_name}
+
         return health_status
     
     def get_available_sources(self) -> List[str]:
