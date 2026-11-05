@@ -87,6 +87,25 @@ def test_FP4_unknown_adjust_type_is_rejected(bad):
         _adjust(client, adjust_type=bad)
 
 
+@pytest.mark.parametrize("order", ["descending", "shuffled"])
+def test_FP5_factor_table_order_does_not_matter(order):
+    """因子表不保证有序：d4 只能取 d3；target=None 必须取最新 d5。"""
+    rows = [
+        ("2024-01-01", 1.1, 0.0, 1.0, 0.0),
+        ("2024-01-03", 1.2, 0.0, 1.0, 0.0),
+        ("2024-01-05", 1.3, 0.0, 1.0, 0.0),
+    ]
+    if order == "descending":
+        rows = list(reversed(rows))
+    else:
+        rows = [rows[1], rows[0], rows[2]]  # d3, d1, d5
+
+    client = _client(_factors(rows))
+
+    assert _adjust(client, target_date="2024-01-04") == pytest.approx(12.0)  # d3 的 1.2
+    assert _adjust(client) == pytest.approx(13.0)                            # 最新 d5 的 1.3
+
+
 def test_FP0_rehab_factors_returns_dataframe():
     """get_rehab_factors 的契约是 DataFrame——get_adjusted_price 就是这么消费的。"""
     factors = _factors([("2024-01-02", 2.0, 1.0, 1.0, 0.0)])
