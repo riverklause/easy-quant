@@ -16,6 +16,24 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 
+def _select_rehab_factor(rehab_factors: pd.DataFrame,
+                         target_date: Optional[str]) -> Optional[pd.Series]:
+    """选目标日（含）之前最近的一条复权因子；无可用因子返回 None。
+
+    不假设输入有序：先 sort_index 再取最后一条。
+    目标日为 None 时取最新一条。
+    """
+    if rehab_factors is None or rehab_factors.empty:
+        return None
+
+    ordered = rehab_factors.sort_index()
+    if target_date is None:
+        return ordered.iloc[-1]
+
+    valid = ordered[ordered.index <= pd.to_datetime(target_date)]
+    return None if valid.empty else valid.iloc[-1]
+
+
 class FutuAPIClient(BaseDataSourceClient):
     """Futu API数据源客户端"""
     
@@ -497,45 +515,24 @@ class FutuAPIClient(BaseDataSourceClient):
             )
 
         try:
-            # 获取复权因子
             rehab_factors = await self.get_rehab_factors(symbol)
-            
-            if rehab_factors.empty:
-                return raw_price  # 没有复权因子，返回原价
-            
-            # 选择复权因子
-            if target_date is None:
-                # 使用最新的复权因子
-                factors = rehab_factors.iloc[-1]
-            else:
-                # 转换为datetime格式
-                target_dt = pd.to_datetime(target_date)
-                
-                # 选择目标日期之前（含）的最新复权因子
-                valid_factors = rehab_factors[rehab_factors.index <= target_dt]
-                
-                if valid_factors.empty:
-                    # 目标日期早于所有复权因子，返回原始价格
-                    return raw_price
-                else:
-                    factors = valid_factors.iloc[-1]
-            
-            # 计算复权价格
-            if adjust_type == 'forward':
-                # 前复权：价格 = 原价 × 因子A + 因子B
-                factor_a = factors.get('forward_adj_factorA', 1.0)
-                factor_b = factors.get('forward_adj_factorB', 0.0)
-                adjusted_price = raw_price * factor_a + factor_b
-            else:
-                # 后复权：价格 = 原价 × 因子A + 因子B
-                factor_a = factors.get('backward_adj_factorA', 1.0)
-                factor_b = factors.get('backward_adj_factorB', 0.0)
-                adjusted_price = raw_price * factor_a + factor_b
-            
-            return adjusted_price
-            
         except Exception as e:
-            raise Exception(f"计算复权价格错误: {e}")
+            raise Exception(f"获取复权因子失败: {e}")
+
+        factors = _select_rehab_factor(rehab_factors, target_date)
+        if factors is None:
+            return raw_price  # 没有可用复权因子，返回原价
+
+        if adjust_type == 'forward':
+            # 前复权：价格 = 原价 × 因子A + 因子B
+            factor_a = factors.get('forward_adj_factorA', 1.0)
+            factor_b = factors.get('forward_adj_factorB', 0.0)
+        else:
+            # 后复权：价格 = 原价 × 因子A + 因子B
+            factor_a = factors.get('backward_adj_factorA', 1.0)
+            factor_b = factors.get('backward_adj_factorB', 0.0)
+
+        return raw_price * factor_a + factor_b
 
     def get_stock_basicinfo(self, market: Market = Market.HK, stock_type: SecurityType = SecurityType.STOCK): 
         """
