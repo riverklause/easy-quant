@@ -8,6 +8,7 @@ import pytest
 
 from indicators.base.calculator import IndicatorCalculator
 from indicators.base.registry import IndicatorRegistry
+from indicators.technical.momentum.rsi import RSI
 from indicators.technical.trend.moving_average import SMA
 
 
@@ -149,3 +150,17 @@ def test_CL2_unregister_clears_history_cache():
     assert calc._cache
     calc.unregister_indicator("sma_5")
     assert calc._cache == {}
+
+
+def test_CL3_clear_cache_by_symbol_and_indicator():
+    """CL3：按指标清理只能删目标，不能顺手清空整只股票。"""
+    calc = IndicatorCalculator()
+    calc.register_indicator(SMA(period=5), "sma_5")
+    calc.register_indicator(RSI(period=14), "rsi_14")
+    calc.batch_calculate(_panel(), ["sma_5", "rsi_14"], cache_mode="history")
+
+    calc.clear_cache(indicator_id="sma_5")
+
+    keys_after = [key[0] for keys in calc._cache.values() for key in keys]
+    assert "sma_5" not in keys_after
+    assert "rsi_14" in keys_after, "误删了未指定的指标缓存"
