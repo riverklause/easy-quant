@@ -10,6 +10,12 @@ rank_ic / quantile_returns 直接消费。
 
 FL6 参数化到 `__all__`：新增因子自动继承尺度不变检查，
 不依赖作者记得补灯。
+
+目录原则之二：**相关 > 0.85 视为同一因子**，只留一个。实测（10 只港股日线）
+bias / bollinger_pb / cci / kdj_k / macd_hist_pct / rsi / wr 两两 0.59~0.87，
+同属"价格在近期区间里的位置"家族；ADX 最大 |0.17|、ATR% 最大 |0.06|，
+是目前唯二接近正交的维度。同族因子堆在目录里会让 meanIC 表把
+同一件事重复测量多次，等权合成时还会互相抵消。
 """
 
 from typing import Dict
