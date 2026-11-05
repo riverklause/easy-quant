@@ -113,8 +113,9 @@ def main() -> None:
     print("\n因子互相关（逐日截面 Spearman 均值；正负号跟着各自的原始刻度，"
           "RSI 与 WR 同号是正常的）")
     print(corr.matrix.rename(index=short, columns=short).round(2).to_string())
-    print(f"有效截面数 {int(corr.n.to_numpy().min())}~{int(corr.n.to_numpy().max())}"
-          f"（与上表 n 同源；相关无法定义的截面不计入）")
+    mn, mx = int(corr.n.to_numpy().min()), int(corr.n.to_numpy().max())
+    print(f"有效截面数 {mn}~{mx}：与总天数 {len(close)} 的差 = 被丢弃的截面 + 相关未定义的截面"
+          "（后者在 rank_ic 里是静默丢的，这里由 n 暴露出来）")
 
 
 if __name__ == "__main__":
