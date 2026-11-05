@@ -54,6 +54,8 @@
 | FL0 | 生产包（backtest/data/indicators/screener/strategy/web）不得 import research | 保护性；今天即绿；在生产包里写 `import research.xxx` → 只有 FL0 红 | ✓ |
 | FL1 | 因子面板因果性——t 列只依赖 ≤t 的数据（与 T3 同范式） | 回退 `momentum` 加 `.shift(-1)` 泄漏未来 → 只有 FL1 红（位置 5 第一次 diff，`nan != 0.0495...`） | ✓ |
 | FL1b | `to_panel` 按日期并集对齐、缺失保留 NaN | 回退为 inner join → 只有 FL1b 红（`assert 39 == 40`） | ✓ |
+| FL2 | 同序因子/标签 → RankIC 恒为 1（守方向/符号） | 与 FL2b 同回退：去掉 rank 变 Pearson → FL2 仍绿（Pearson 对同序也是 1）、FL2b 红 | ✓ |
+| FL2b | 单调变换不改变秩 → RankIC 不变（钉住 Spearman 秩相关） | 去掉 `.rank(axis=1)` → 只有 FL2b 红（Pearson 对 `exp` 敏感，Series 100% 不同），FL2 不受影响 | ✓ |
 
 R1 之后，L4b / L4b2 的绿依赖 L4c 的声明式装配；本表记录的是各自独立修复时的回退结果。
 
