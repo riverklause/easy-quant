@@ -1,5 +1,6 @@
-"""FL0-FL2b：research 包隔离 + 因子面板地基 + RankIC 秩语义。"""
+"""FL0-FL3b：research 包隔离 + 因子面板地基 + RankIC 秩语义 + 小截面丢弃。"""
 
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -103,3 +104,35 @@ def test_FL2b_rank_ic_ignores_monotone_transforms():
     pearson_exp = factor.map(np.exp).corrwith(fwd, axis=1)
     overlap = pearson_raw.dropna().index
     assert not np.allclose(pearson_raw[overlap], pearson_exp[overlap])
+
+
+# ===== FL3：小截面丢弃必须可见，且按"成对有效样本"计数 =====
+
+def test_FL3_small_cross_sections_are_dropped_and_counted(caplog):
+    """只有 3 只股票、要求 ≥5 → 全部丢弃，且必须留下日志。"""
+    from research.factor_lab.ic import rank_ic
+    from research.factor_lab.labels import forward_returns
+
+    fwd = forward_returns(_price_panel(rows=5, n=3), horizon=1)
+
+    with caplog.at_level(logging.WARNING, logger="research.factor_lab.ic"):
+        ic = rank_ic(fwd.copy(), fwd, min_stocks=5)
+
+    assert ic.empty
+    assert "丢弃 5 个截面" in caplog.text
+
+
+def test_FL3b_threshold_counts_pairs_not_columns():
+    """10 列，但某日只有 2 个成对有效样本：该日必须丢弃。"""
+    from research.factor_lab.ic import rank_ic
+    from research.factor_lab.labels import forward_returns
+
+    fwd = forward_returns(_price_panel(rows=6, n=10), horizon=1)
+    factor = _value_panel(rows=6, n=10, seed=3)
+    idx = fwd.index
+    factor.loc[idx[2], factor.columns[2:]] = np.nan     # 该日只剩 2 个有效
+
+    ic = rank_ic(factor, fwd, min_stocks=5)
+
+    assert len(ic) == 4                                 # 6 行 - 该日 - 末行无标签
+    assert idx[2] not in ic.index
