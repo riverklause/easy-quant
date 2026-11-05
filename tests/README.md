@@ -42,6 +42,7 @@
 | L8a | 预计算切片越界（看到未来 / 值不符） | 保护性灯（当前即绿） | ✓ |
 | L9 | ADX 条件取整行 Series 而非 `adx` 列 | 回退成 `result.iloc[-1]` → 只有 L9 红（Series 歧义布尔） | ✓ |
 | LG0 | `utils/` 下模块导入即崩（`settings.LOG_LEVEL` / `DATA_BASE_PATH`） | 回退 `utils/logger.py` → 4 个 LG0 全红（`AttributeError: LOG_LEVEL`）；回退 `file_utils` 的两处引用 → 只有 LG0[file_utils] 红（`DATA_BASE_PATH`） | ✓ |
+| LG1 | `configure_logging` 重复调用叠加 handler（保护性灯） | 去掉 handler 清理 → `assert 6 == 2`（pytest 自有 4 个 + 我们的 2 个）；只去掉 `_CONFIGURED` 仍绿 | ✓ |
 
 R1 之后，L4b / L4b2 的绿依赖 L4c 的声明式装配；本表记录的是各自独立修复时的回退结果。
 
