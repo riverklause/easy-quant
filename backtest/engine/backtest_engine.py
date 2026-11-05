@@ -289,12 +289,13 @@ class BacktestEngine:
         symbols = set()
         
         for strategy in self.strategies:
-            if hasattr(strategy, 'get_required_symbols'):
-                symbols.update(strategy.get_required_symbols())
-            elif hasattr(strategy, 'applicable_stocks') and strategy.applicable_stocks:
+            if getattr(strategy, 'applicable_stocks', None):
                 symbols.update(strategy.applicable_stocks)
         
-        return list(symbols) if symbols else ['AAPL', 'GOOG', 'MSFT']
+        if not symbols:
+            logger.warning("策略未声明标的，回落默认 AAPL/GOOG/MSFT")
+            return ['AAPL', 'GOOG', 'MSFT']
+        return list(symbols)
     
     def _get_trading_dates(self) -> List[pd.Timestamp]:
         """获取交易日期列表"""
