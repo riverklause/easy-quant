@@ -471,6 +471,13 @@ git config core.hooksPath .githooks
 - `core.hooksPath` 是**本地配置**，不进版本库——换机器要重新执行一次。
 - Windows 下钩子由 Git Bash 执行：`python` 需在 PATH，脚本按 LF 检出（已在 `.gitattributes` 钉住）。
 
+## 数据目录约定
+
+- **入库**：`data/meta/*`（股票列表等小体积状态）、`data/screener/yfinance/*` 与
+  `data/realtime/**` 的少量样本 —— 保证 clone 下来能直接跑 demo；
+- **不入库**：`data/historical/`、`data/cache/`、`data/backtest/`、`data/logs/`（运行产物，体积不受控）；
+- **禁止入库**：`.env`、密钥、账户/持仓类文件（`.gitignore` 已按通配规则拦截；`.py` 模块不受影响）。
+
 ## 许可证
 
 MIT License
