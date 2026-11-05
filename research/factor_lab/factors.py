@@ -7,11 +7,23 @@
 入口函数签名统一 `fn(stock_data: Dict[str, pd.DataFrame]) -> pd.DataFrame`
 （宽表，index=date, columns=symbol），供 FL6 尺度不变灯与后续
 rank_ic / quantile_returns 直接消费。
+
+FL6 参数化到 `__all__`：新增因子自动继承尺度不变检查，
+不依赖作者记得补灯。
 """
+
+from typing import Dict
 
 import pandas as pd
 
 from .adapter import indicator_factor
+from .panel import to_panel
+
+
+__all__ = [
+    "adx_factor", "atr_pct_factor", "bias_factor", "bollinger_pb_factor",
+    "cci_factor", "kdj_k_factor", "rsi_factor", "wr_factor",
+]
 
 
 # ---- 直接无量纲（output_fields 里是 0–100 / −100–0 等范围量）---------
@@ -22,22 +34,48 @@ def rsi_factor(stock_data: Dict[str, pd.DataFrame], period: int = 14) -> pd.Data
     return indicator_factor(stock_data, RSI(period=period), "rsi")
 
 
+def cci_factor(stock_data: Dict[str, pd.DataFrame], period: int = 14) -> pd.DataFrame:
+    """CCI（无量纲振荡器）。"""
+    from indicators.technical.momentum.cci import CCI
+    return indicator_factor(stock_data, CCI(period=period), "cci")
+
+
+def wr_factor(stock_data: Dict[str, pd.DataFrame], period: int = 14) -> pd.DataFrame:
+    """Williams %R（−100–0，无量纲）。"""
+    from indicators.technical.momentum.williams_r import WilliamsR
+    return indicator_factor(stock_data, WilliamsR(period=period), "wr")
+
+
+def kdj_k_factor(stock_data: Dict[str, pd.DataFrame],
+                 k_period: int = 9,
+                 d_period: int = 3,
+                 smooth_period: int = 3) -> pd.DataFrame:
+    """KDJ 的 %K（0–100，无量纲）。"""
+    from indicators.technical.momentum.kdj import KDJ
+    kdj = KDJ(k_period=k_period, d_period=d_period, smooth_period=smooth_period)
+    return indicator_factor(stock_data, kdj, "k")
+
+
+def adx_factor(stock_data: Dict[str, pd.DataFrame], period: int = 14) -> pd.DataFrame:
+    """ADX（0–100，趋势强度，无量纲）。"""
+    from indicators.technical.trend.adx import ADX
+    return indicator_factor(stock_data, ADX(period=period), "adx")
+
+
 # ---- 需归一化（指标本身是价格量纲）------------------------------------
 
 def atr_pct_factor(stock_data: Dict[str, pd.DataFrame], period: int = 14) -> pd.DataFrame:
     """ATR / close（无量纲价格波动率）。"""
     from indicators.technical.volatility.atr import ATR
     atr = indicator_factor(stock_data, ATR(period=period), "atr")
-    close = pd.DataFrame({sym: df["close"] for sym, df in stock_data.items()}).sort_index()
-    return atr / close
+    return atr / to_panel(stock_data, "close")
 
 
 def bias_factor(stock_data: Dict[str, pd.DataFrame], period: int = 20) -> pd.DataFrame:
     """close / SMA − 1（无量纲乖离率）。"""
     from indicators.technical.trend.moving_average import SMA
     sma = indicator_factor(stock_data, SMA(period=period), "sma")
-    close = pd.DataFrame({sym: df["close"] for sym, df in stock_data.items()}).sort_index()
-    return close / sma - 1
+    return to_panel(stock_data, "close") / sma - 1
 
 
 def bollinger_pb_factor(stock_data: Dict[str, pd.DataFrame],
@@ -47,5 +85,4 @@ def bollinger_pb_factor(stock_data: Dict[str, pd.DataFrame],
     ind = BollingerBands(period=period)
     lower = indicator_factor(stock_data, ind, "bb_lower")
     upper = indicator_factor(stock_data, ind, "bb_upper")
-    close = pd.DataFrame({sym: df["close"] for sym, df in stock_data.items()}).sort_index()
-    return (close - lower) / (upper - lower)
+    return (to_panel(stock_data, "close") - lower) / (upper - lower)

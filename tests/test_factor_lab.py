@@ -1,4 +1,4 @@
-"""FL0-FL3b：research 包隔离 + 因子面板地基 + RankIC 秩语义 + 小截面丢弃。"""
+"""FL0-FL6：research 隔离 + 面板地基 + RankIC + 分档 + 适配器 + 尺度不变。"""
 
 import logging
 from pathlib import Path
@@ -6,6 +6,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
+
+from research.factor_lab import factors as _factors
 
 _ROOT = Path(__file__).resolve().parent.parent
 
@@ -232,25 +234,21 @@ def test_FL5b_adapter_rejects_unknown_field():
         indicator_factor(_ohlcv_stock_data(), RSI(period=10), "bogus")
 
 
-def test_FL6_scale_invariance():
-    """无量纲因子：价格整体乘 100 → 因子面板不变（NaN 对齐允许）。"""
-    from research.factor_lab import factors
+_ALL_FACTORS = [getattr(_factors, name) for name in _factors.__all__]
 
+
+@pytest.mark.parametrize("fn", _ALL_FACTORS, ids=lambda f: f.__name__)
+def test_FL6_factors_are_scale_invariant(fn):
+    """目录里每一个因子：价格整体乘 100 → 因子面板不变。
+
+    参数化到 __all__，新增因子自动继承检查，不依赖作者记得补灯。
+    """
     data = _ohlcv_stock_data()
     scaled = {sym: df.assign(high=df.high * 100, low=df.low * 100,
                               close=df.close * 100, open=df.open * 100)
               for sym, df in data.items()}
 
-    for name, fn in [
-        ("rsi", factors.rsi_factor),
-        ("atr_pct", factors.atr_pct_factor),
-        ("bias", factors.bias_factor),
-        ("bollinger_pb", factors.bollinger_pb_factor),
-    ]:
-        orig = fn(data)
-        scaled_out = fn(scaled)
-        # 对齐 NaN 后断言近似相等
-        aligned = orig.fillna(0).to_numpy()
-        scaled_arr = scaled_out.fillna(0).to_numpy()
-        assert np.allclose(aligned, scaled_arr, equal_nan=True), \
-            f"{name} 在价格乘 100 后变化了（违反尺度不变）"
+    orig, scaled_out = fn(data), fn(scaled)
+    assert np.allclose(orig.fillna(0).to_numpy(),
+                       scaled_out.fillna(0).to_numpy(), equal_nan=True), \
+        f"{fn.__name__} 在价格乘 100 后变化了（违反尺度不变）"
