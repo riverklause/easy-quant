@@ -106,8 +106,8 @@ class BaseStrategy(ABC):
         Args:
             **kwargs: 初始化参数，透传给 initialize
         """
-        self.is_running = True
         self.initialize(**kwargs)
+        self.is_running = True
         logger.info("策略 %s 启动", self.name)
     
     def stop(self):

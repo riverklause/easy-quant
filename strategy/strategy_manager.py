@@ -31,7 +31,6 @@ class StrategyManager:
         self.data_manager = data_manager
         self.strategies: Dict[str, BaseStrategy] = {}
         self.portfolios: Dict[str, StrategyPortfolio] = {}  # 策略组合字典
-        self.is_running = False
         
         # 策略执行器（负责指标计算和策略执行协调）
         self.executor = strategy_executor or StrategyExecutor()
@@ -49,7 +48,12 @@ class StrategyManager:
         
         # 全局信号历史
         self.global_signals = []
-    
+
+    @property
+    def is_running(self) -> bool:
+        """派生状态：只要有一个策略在运行，管理器就在运行。"""
+        return any(strategy.is_running for strategy in self.strategies.values())
+
     def register_strategy(self, strategy: BaseStrategy) -> str:
         """
         注册策略
@@ -122,13 +126,10 @@ class StrategyManager:
         Args:
             **kwargs: 启动参数
         """
-        if not self.is_running:
-            self.is_running = True
-            
-            for strategy_id in self.strategies:
-                self.start_strategy(strategy_id, **kwargs)
-            
-            logger.info("所有策略启动成功，共 %s 个策略", len(self.strategies))
+        for strategy_id in self.strategies:
+            self.start_strategy(strategy_id, **kwargs)
+
+        logger.info("所有策略启动成功，共 %s 个策略", len(self.strategies))
     
     def stop_strategy(self, strategy_id: str):
         """
@@ -153,7 +154,6 @@ class StrategyManager:
         for strategy_id in self.strategies:
             self.stop_strategy(strategy_id)
 
-        self.is_running = False
         logger.info("所有策略已停止")
     
     def update_strategy(self, strategy_id: str, data: Any, **kwargs):
