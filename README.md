@@ -443,7 +443,7 @@ python examples/demo_unified_strategy.py
 - **数据处理**: pandas, numpy, scikit-learn
 - **数据获取**: futu-api, yfinance
 - **数据存储**: pyarrow (Parquet格式)
-- **异步支持**: asyncio, aiolimiter
+- **异步支持**: asyncio
 - **Web框架**: Dash + dash-extensions（Server 为 werkzeug）
 - **测试框架**: pytest（未使用 pytest-asyncio，异步用例用 `asyncio.run` 驱动）
 - **缓存**: diskcache（Dash 后台回调）

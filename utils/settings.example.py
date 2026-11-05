@@ -169,23 +169,3 @@ def update_settings(data_path=None, yfinance_proxy=None):
 def get_futu_rsa_key_path():
     """获取Futu RSA私钥完整路径的便捷函数"""
     return settings.futu_rsa_key_path
-
-# 环境变量配置说明
-ENV_CONFIG_DOC = """
-环境变量配置说明：
-
-# 数据文件夹路径（支持自定义迁移）
-DATA_BASE_PATH=/path/to/your/data/folder
-
-# yfinance代理配置
-yfinance需要指定代理地址才能正常运行
-YFINANCE_PROXY=http://your-proxy-server:port
-
-# 其他配置
-LOG_LEVEL=INFO|DEBUG|WARNING
-MAX_WORKERS=10
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_DB=0
-DEFAULT_DATA_SOURCE=futu
-"""
