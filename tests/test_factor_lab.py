@@ -1,16 +1,8 @@
-"""FL0-FL1b：research 包隔离 + 因子面板因果性。
-
-FL0（保护性）：生产包（backtest/data/indicators/screener/strategy/web）
-不得 import research；今天即绿，写进来是为了防将来有人在生产代码里
-顺手从 research 抄东西。
-
-FL1 / FL1b（因果 + 对齐）：因子面板是所有 IC / 分档的地基，一旦泄漏
-未来数据，IC 会好看得离谱且不可察觉。FL1 钉"t 列只依赖 ≤t 的数据"，
-与 T3 同范式；FL1b 钉"并集对齐、缺失显式保留为 NaN"。
-"""
+"""FL0-FL2b：research 包隔离 + 因子面板地基 + RankIC 秩语义。"""
 
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -66,3 +58,48 @@ def test_FL1b_panel_aligns_symbols_on_date_union():
     assert list(panel.columns) == ["A", "B", "C"]
     assert panel.shape[0] == 40                         # 并集，不是交集
     assert pd.isna(panel.loc[data["B"].index[10], "A"])  # 缺失显式保留为 NaN
+
+
+# ===== FL2：RankIC 的秩语义 =====
+
+def _value_panel(rows: int = 20, n: int = 30, seed: int = 0,
+                 lo: float = 0.0, hi: float = 1.0) -> pd.DataFrame:
+    rng = np.random.default_rng(seed)
+    idx = pd.bdate_range("2024-01-01", periods=rows)
+    cols = [f"S{i}" for i in range(n)]
+    return pd.DataFrame(rng.uniform(lo, hi, (rows, n)), index=idx, columns=cols)
+
+
+def _price_panel(rows: int = 20, n: int = 30, seed: int = 0) -> pd.DataFrame:
+    """价格必须为正，forward_returns 才有意义。"""
+    return _value_panel(rows, n, seed, lo=10.0, hi=11.0)
+
+
+def test_FL2_rank_ic_is_one_for_identical_ordering():
+    """因子与标签完全同序 ⇒ RankIC 恒为 1；最后一根 bar 没有前瞻收益。"""
+    from research.factor_lab.ic import rank_ic
+    from research.factor_lab.labels import forward_returns
+
+    fwd = forward_returns(_price_panel(), horizon=1)
+    ic = rank_ic(fwd.copy(), fwd)
+
+    assert len(ic) == len(fwd.index) - 1
+    assert np.allclose(ic.to_numpy(), 1.0)
+
+
+def test_FL2b_rank_ic_ignores_monotone_transforms():
+    """单调变换不改变秩 ⇒ RankIC 不变；Pearson 会变（钉住"用的是秩"）。"""
+    from research.factor_lab.ic import rank_ic
+    from research.factor_lab.labels import forward_returns
+
+    fwd = forward_returns(_price_panel(), horizon=1)
+    factor = _value_panel(seed=7, lo=0.0, hi=3.0)      # 0~3，exp 后强烈非线性
+
+    ic_raw = rank_ic(factor, fwd)
+    ic_exp = rank_ic(factor.map(np.exp), fwd)
+    pd.testing.assert_series_equal(ic_raw, ic_exp, check_names=False)
+
+    pearson_raw = factor.corrwith(fwd, axis=1)
+    pearson_exp = factor.map(np.exp).corrwith(fwd, axis=1)
+    overlap = pearson_raw.dropna().index
+    assert not np.allclose(pearson_raw[overlap], pearson_exp[overlap])
