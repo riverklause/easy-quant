@@ -252,3 +252,51 @@ def test_FL6_factors_are_scale_invariant(fn):
     assert np.allclose(orig.fillna(0).to_numpy(),
                        scaled_out.fillna(0).to_numpy(), equal_nan=True), \
         f"{fn.__name__} 在价格乘 100 后变化了（违反尺度不变）"
+
+
+# ===== FL7：IC 汇总 + 衰减 =====
+
+def test_FL7_ic_summary_pins_ddof1_and_ir():
+    """精确值钉住 ddof=1 与 IR 定义（ddof=0 会让 IR 差 20%+）。"""
+    from research.factor_lab.ic import ic_summary
+
+    s = ic_summary(pd.Series([0.1, -0.05, 0.2]))
+
+    assert s.n == 3
+    assert s.mean == pytest.approx(0.25 / 3)
+    assert s.std == pytest.approx((0.03166666666666667 / 2) ** 0.5)   # ddof=1
+    assert s.ir == pytest.approx(s.mean / s.std)
+    assert s.positive_ratio == pytest.approx(2 / 3)
+    assert s.t_stat == pytest.approx(s.ir * 3 ** 0.5)
+
+
+def test_FL7c_ic_summary_on_empty_series():
+    """空序列不抛异常：n=0，其余为 NaN。"""
+    from research.factor_lab.ic import ic_summary
+
+    s = ic_summary(pd.Series(dtype=float))
+
+    assert s.n == 0
+    assert np.isnan(s.mean) and np.isnan(s.ir)
+
+
+def test_FL7b_ic_decay_is_strictly_monotone_for_an_iid_predictor():
+    """因子 = 次日收益：h=1 时 IC=1，h 越大 IC≈1/√h，必须**严格**下降。
+
+    合成数据里因子故意使用未来收益——它是"完美预测器"基准，不是研究用法。
+    """
+    from research.factor_lab.decay import ic_decay
+
+    rng = np.random.default_rng(0)
+    idx = pd.bdate_range("2024-01-01", periods=60)
+    cols = [f"S{i}" for i in range(30)]
+    ret = pd.DataFrame(rng.normal(0, 0.01, (60, 30)), index=idx, columns=cols)
+    close = (1 + ret).cumprod()
+    factor = close.pct_change().shift(-1)          # 次日收益
+
+    decay = ic_decay(factor, close, horizons=(1, 2, 5, 10))
+
+    assert list(decay.index) == [1, 2, 5, 10]
+    assert decay.loc[1, "mean_ic"] == pytest.approx(1.0)
+    assert (decay["mean_ic"].diff().dropna() < 0).all()   # 严格下降
+    assert decay["n"].is_monotonic_decreasing             # 样本随 horizon 变少
