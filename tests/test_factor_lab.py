@@ -361,3 +361,37 @@ def test_FL8c_correlation_reuses_min_stocks_per_date():
     assert r.n.loc["f", "g"] == 5                      # 6 行 - 被丢的那行
     assert r.n.loc["g", "f"] == 5                      # 对称
     assert r.n.loc["f", "f"] == 5
+
+
+# ===== FL9：秩必须在成对支撑集上取 =====
+
+def _asymmetric_support_panels():
+    """A 有 6 个有效值 [1..6]；B 只在 S0/S2/S5 有效，且在交集上严格反向。"""
+    idx = pd.bdate_range("2024-01-01", periods=1)
+    cols = [f"S{i}" for i in range(6)]
+    a = pd.DataFrame([[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]], index=idx, columns=cols)
+    b = pd.DataFrame([[30.0, np.nan, 20.0, np.nan, np.nan, 10.0]],
+                     index=idx, columns=cols)
+    return a, b
+
+
+def test_FL9_rank_ic_ranks_on_paired_support():
+    """各面板自身取秩 → A 在交集上是 [1,3,6]，得到 −0.9934；
+    在交集上取秩 → [1,2,3]，正确结果是 −1.0。"""
+    from research.factor_lab.ic import rank_ic
+
+    a, b = _asymmetric_support_panels()
+    ic = rank_ic(a, b, min_stocks=3)
+
+    assert len(ic) == 1
+    assert ic.iloc[0] == pytest.approx(-1.0)
+
+
+def test_FL9b_factor_correlation_uses_the_same_definition():
+    """相关性矩阵与 rank_ic 必须共用同一个秩定义。"""
+    from research.factor_lab.cross_section import factor_correlation
+
+    a, b = _asymmetric_support_panels()
+    result = factor_correlation({"A": a, "B": b}, min_stocks=3)
+
+    assert result.matrix.loc["A", "B"] == pytest.approx(-1.0)
