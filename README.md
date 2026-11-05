@@ -116,26 +116,19 @@ easy-quant/
 │   │   ├── calculator.py    # ✅ 指标计算器
 │   │   └── registry.py      # ✅ 指标注册器
 │   ├── technical/           # ✅ 技术指标实现
+│   │   ├── fundamental/     # ✅ 基本面指标（Altman Z-Score、杜邦分析）
 │   │   ├── momentum/        # ✅ 动量指标
 │   │   ├── trend/           # ✅ 趋势指标（SMA、EMA、MACD等）
 │   │   ├── volatility/      # ✅ 波动率指标
 │   │   └── volume/          # ✅ 成交量指标
-│   └── fundamental/         # ✅ 基本面指标实现
 ├── screener/                # ✅ 条件过滤模块（已完成）
 │   ├── filter_condition.py  # ✅ 条件基类
 │   ├── stock_screener.py    # ✅ 选股执行引擎
 │   └── conditions/          # ✅ 内置条件
 │       ├── custom.py        # ✅ 自定义条件
-│       └── technical/       # ✅ 技术条件
-│       ├── altman_z_score.py # ✅ Altman Z-Score财务风险指标
-│       └── dupont_analysis.py # ✅ 杜邦分析盈利能力指标
+│       └── technical/       # ✅ 技术条件（ADX、MACD、RSI、KDJ 等 8 个）
 ├── research/               # 研究模块
-│   ├── dashboard/          # 仪表盘
-│   ├── factor_analysis/    # 因子分析
-│   ├── mcp_integration/    # MCP策略集成
-│   ├── optimization/       # 优化模块
-│   ├── strategy_builder/   # 策略构建
-│   └── validation/         # 验证工具
+│   └── factor_lab/         # ✅ 因子实验室（IC、分层、衰减）
 ├── risk_management/        # 风险管理模块
 ├── strategy/               # ✅ 策略引擎（已完成）
 │   ├── multi_factor/       # ✅ 多因子策略框架
@@ -146,8 +139,11 @@ easy-quant/
 │   ├── strategy_manager.py # ✅ 统一策略管理器
 │   ├── strategy_portfolio.py # ✅ 策略组合管理器
 │   └── technical_strategy.py # ✅ 技术指标策略基类
-├── tests/                  # ✅ 测试框架
-│   └── test_data_manager.py # ✅ 数据管理器测试
+├── tests/                  # ✅ 回归测试（pytest tests/）
+│   ├── test_lamps.py       # ✅ 撮合/引擎契约灯
+│   ├── test_indicator_contracts.py # ✅ 指标契约灯
+│   ├── test_strategy_manager_lamps.py # ✅ 策略管理 smoke 灯
+│   └── ...                 # ✅ 其余按模块划分
 ├── utils/                  # ✅ 工具模块
 │   ├── symbol_utils.py     # ✅ 股票代码工具
 │   ├── settings.py         # ✅ 配置管理
@@ -298,7 +294,7 @@ data_manager = DataManager(custom_config)
 
 运行测试用例：
 ```bash
-pytest tests/test_data_manager.py -v
+pytest tests/ -q
 ```
 
 ### 示例

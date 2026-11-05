@@ -99,12 +99,15 @@ class BaseStrategy(ABC):
         """
         pass
     
-    def start(self):
+    def start(self, **kwargs):
         """
         启动策略
+
+        Args:
+            **kwargs: 初始化参数，透传给 initialize
         """
         self.is_running = True
-        self.initialize()
+        self.initialize(**kwargs)
         logger.info("策略 %s 启动", self.name)
     
     def stop(self):

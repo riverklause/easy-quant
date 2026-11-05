@@ -109,8 +109,7 @@ class StrategyManager:
         
         strategy = self.strategies[strategy_id]
         if not strategy.is_running:
-            strategy.initialize(**kwargs)
-            strategy.start()
+            strategy.start(**kwargs)
             self._emit_event('strategy_started', {
                 'strategy_id': strategy_id,
                 'timestamp': datetime.now()
@@ -149,14 +148,13 @@ class StrategyManager:
     
     def stop_all_strategies(self):
         """
-        停止所有策略
+        停止所有策略（无论是否通过 start_all_strategies 启动）
         """
-        if self.is_running:
-            for strategy_id in self.strategies:
-                self.stop_strategy(strategy_id)
-            
-            self.is_running = False
-            logger.info("所有策略已停止")
+        for strategy_id in self.strategies:
+            self.stop_strategy(strategy_id)
+
+        self.is_running = False
+        logger.info("所有策略已停止")
     
     def update_strategy(self, strategy_id: str, data: Any, **kwargs):
         """
@@ -427,8 +425,8 @@ class StrategyManager:
             for portfolio in self.portfolios.values():
                 applicable_strategies.extend(portfolio.get_strategies_for_stock(stock_symbol))
         
-        # 去重并返回
-        return list(set(applicable_strategies))
+        # 去重并保序（set 的顺序随 hash 随机化变化，会打乱信号顺序）
+        return list(dict.fromkeys(applicable_strategies))
     
     def add_strategy_to_portfolio(self, 
                                  portfolio_name: str,

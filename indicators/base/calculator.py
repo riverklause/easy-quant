@@ -22,10 +22,10 @@ class IndicatorCalculator:
     3. 指标要先用IndicatorRegistry类创建指标实例化对象，然后注册到计算器，才能被calculate方法使用
     4. 支持两种缓存模式：history（历史数据，hash对比）和realtime（实时数据，覆盖更新）
 
-    历史缓存结构 (_cache)：
+    历史缓存结构 (_cache)，键为 (indicator_id, data_hash, kwargs_hash) 元组：
         {
             'AAPL': {
-                'hash_key': {'data': result, 'timestamp': datetime}
+                ('sma_20', data_hash, kwargs_hash): {'data': result, 'timestamp': datetime}
             }
         }
 
@@ -207,7 +207,7 @@ class IndicatorCalculator:
                         results[symbol][indicator_id] = {'error': f"未找到指标: {indicator_id}"}
                         continue
 
-                    cache_key = self._generate_cache_key(indicator_id, symbol, symbol_data, kwargs)
+                    cache_key = self._generate_cache_key(indicator_id, symbol_data, kwargs)
                     cached_result = None
 
                     if use_cache:
@@ -259,10 +259,10 @@ class IndicatorCalculator:
         if cache_mode == 'realtime':
             return self._realtime_cache.get(symbol, {}).get(indicator_id)
         else:
-            # 历史模式需要遍历hash key查找
+            # 历史模式需要遍历 hash key 查找，按元组首项精确匹配指标 ID
             if symbol in self._cache:
                 for key, entry in self._cache[symbol].items():
-                    if indicator_id in key:
+                    if key[0] == indicator_id:
                         return entry.get('data')
             return None
 
@@ -352,20 +352,18 @@ class IndicatorCalculator:
 
     def _generate_cache_key(self,
                            indicator_id: str,
-                           symbol: str,
                            data: Any,
-                           kwargs: Dict) -> str:
+                           kwargs: Dict) -> tuple:
         """
-        生成缓存键（包含股票代码）
+        生成缓存键（indicator_id, data_hash, kwargs_hash）
 
         Args:
             indicator_id: 指标ID
-            symbol: 股票代码
             data: 输入数据
             kwargs: 计算参数
 
         Returns:
-            缓存键字符串
+            缓存键元组 (indicator_id, data_hash, kwargs_hash)
         """
         if isinstance(data, (pd.DataFrame, pd.Series)):
             if len(data) > 0:
@@ -377,9 +375,9 @@ class IndicatorCalculator:
         
         kwargs_hash = hash(str(sorted(kwargs.items()))) if kwargs else 0
 
-        return f"{symbol}_{indicator_id}_{data_hash}_{kwargs_hash}"
+        return (indicator_id, data_hash, kwargs_hash)
 
-    def _get_from_cache(self, symbol: str, cache_key: str) -> Optional[Any]:
+    def _get_from_cache(self, symbol: str, cache_key: tuple) -> Optional[Any]:
         """从历史缓存获取数据"""
         with self._cache_lock:
             if symbol not in self._cache:
@@ -396,7 +394,7 @@ class IndicatorCalculator:
 
         return None
 
-    def _add_to_cache(self, symbol: str, cache_key: str, data: Any):
+    def _add_to_cache(self, symbol: str, cache_key: tuple, data: Any):
         """添加数据到历史缓存"""
         with self._cache_lock:
             if symbol not in self._cache:
@@ -434,8 +432,7 @@ class IndicatorCalculator:
         with self._cache_lock:
             for symbol in list(self._cache.keys()):
                 keys_to_remove = [k for k in self._cache[symbol].keys()
-                                if k.endswith(f"_{indicator_id}_") or
-                                   k.endswith(f"_{indicator_id}")]
+                                if k[0] == indicator_id]
                 for key in keys_to_remove:
                     del self._cache[symbol][key]
 
@@ -464,8 +461,7 @@ class IndicatorCalculator:
             else:
                 if symbol in self._cache:
                     keys_to_remove = [k for k in self._cache[symbol].keys()
-                                    if k.endswith(f"_{indicator_id}_") or
-                                       k.endswith(f"_{indicator_id}")]
+                                    if k[0] == indicator_id]
                     for key in keys_to_remove:
                         del self._cache[symbol][key]
 
