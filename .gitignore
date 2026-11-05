@@ -18,6 +18,10 @@ htmlcov/
 .coverage
 *.egg-info/
 
+# pip 安装临时目录（Windows 下 TMP 回退到 cwd 时会生成）
+/pip-*/
+/tmp*/
+
 # 数据目录：样本入库（data/meta、data/screener、data/realtime），
 # 原始历史与运行产物不入库
 data/historical/
