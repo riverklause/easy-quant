@@ -16,18 +16,15 @@ class MACDCross(TechnicalCondition):
         self.signal = signal
 
     def _calculate_indicator(self, data):
-        from indicators.technical.trend.moving_average import EMA
-        close = data['close']
-        ema_fast = EMA(span=self.fast).calculate(close)
-        ema_slow = EMA(span=self.slow).calculate(close)
-        macd_line = ema_fast - ema_slow
-        signal_line = EMA(span=self.signal).calculate(macd_line)
-        histogram = macd_line - signal_line
+        from indicators.technical.trend.moving_average import MACD
+        result = MACD(fast_period=self.fast, slow_period=self.slow,
+                      signal_period=self.signal).calculate(data)
+        histogram = result['histogram'].dropna()
         if len(histogram) < 2:
             return None
         return {
-            'current': histogram.iloc[-1],
-            'previous': histogram.iloc[-2]
+            'current': float(histogram.iloc[-1]),
+            'previous': float(histogram.iloc[-2])
         }
 
     def evaluate(self, data):
