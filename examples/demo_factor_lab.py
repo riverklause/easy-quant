@@ -6,6 +6,7 @@
 - `data/historical` 在 `.gitignore` 里，干净 clone 跑不了，因此不进 pytest。
 """
 
+import logging
 import sys
 from pathlib import Path
 
@@ -16,7 +17,8 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from research.factor_lab import factors
-from research.factor_lab.ic import rank_ic
+from research.factor_lab.cross_section import paired_counts
+from research.factor_lab.ic import ic_summary, rank_ic
 from research.factor_lab.labels import forward_returns
 from research.factor_lab.panel import to_panel
 
@@ -75,20 +77,34 @@ def main() -> None:
     counts = (close.notna() & fwd.notna()).sum(axis=1)
     print(f"标的 {len(bars)} 只 | 交易日 {len(close)} | 前瞻 {HORIZON} 日")
     print(f"每日有效样本：中位数 {counts.median():.0f}，最小 {counts.min():.0f}"
-          f"（min_stocks={MIN_STOCKS}）\n")
+          f"（min_stocks={MIN_STOCKS}）")
+    print("drop = 因有效样本不足被丢弃的截面数（与日志 warning 同源，这里并入表格）")
+    print("t    = IR * sqrt(n)，仅作描述：10 只股票的样本量下不构成显著性结论\n")
 
-    header = f"{'factor':22s} {'n':>4s} {'meanIC':>8s} {'IR':>7s} {'IC>0':>6s}"
+    header = (f"{'factor':22s} {'n':>4s} {'drop':>4s} {'meanIC':>8s} "
+              f"{'std':>7s} {'IR':>7s} {'IC>0':>6s} {'t':>6s}")
     print(header)
     print("-" * len(header))
 
-    for name in factors.__all__:
-        ic = rank_ic(getattr(factors, name)(bars), fwd, min_stocks=MIN_STOCKS)
-        if ic.empty:
-            print(f"{name:22s} {0:4d} {'-':>8s} {'-':>7s} {'-':>6s}")
-            continue
-        ir = ic.mean() / ic.std() if ic.std() else float("nan")
-        print(f"{name:22s} {len(ic):4d} {ic.mean():+8.4f} {ir:+7.3f} "
-              f"{(ic > 0).mean():6.0%}")
+    ic_logger = logging.getLogger("research.factor_lab.ic")
+    previous_level = ic_logger.level
+    ic_logger.setLevel(logging.ERROR)          # 丢弃数已进表格，不再逐条刷屏
+    try:
+        for name in factors.__all__:
+            panel = getattr(factors, name)(bars)
+            ic = rank_ic(panel, fwd, min_stocks=MIN_STOCKS)
+            dropped = int((paired_counts(panel, fwd) < MIN_STOCKS).sum())
+            s = ic_summary(ic)
+
+            if s.n == 0:
+                print(f"{name:22s} {0:4d} {dropped:4d} "
+                      f"{'-':>8s} {'-':>7s} {'-':>7s} {'-':>6s} {'-':>6s}")
+                continue
+
+            print(f"{name:22s} {s.n:4d} {dropped:4d} {s.mean:+8.4f} {s.std:7.4f} "
+                  f"{s.ir:+7.3f} {s.positive_ratio:6.0%} {s.t_stat:+6.2f}")
+    finally:
+        ic_logger.setLevel(previous_level)     # 恢复：别把调用方的日志级别改坏
 
 
 if __name__ == "__main__":
