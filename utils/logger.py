@@ -61,11 +61,6 @@ def configure_logging(level: Optional[str] = None,
     return root
 
 
-def get_logger(name: Optional[str] = None) -> logging.Logger:
-    """兼容旧调用：返回 stdlib logger。"""
-    return logging.getLogger(name) if name else logging.getLogger()
-
-
 if __name__ == "__main__":
     configure_logging(level="DEBUG")
     logging.getLogger(__name__).info("日志配置完成")
