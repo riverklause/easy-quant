@@ -43,8 +43,8 @@
 
 **第五阶段：回测引擎 - 已完成 ✅**
 - 回测引擎核心实现（BacktestEngine）
-- 组合管理器实现（Portfolio）
-- 订单执行器实现（OrderExecutor）
+- 组合管理器实现（Portfolio，统一撮合与佣金/滑点）
+- 仓位计算器（PositionSizer）
 - 历史数据源实现（HistoricalDataFeed）
 - 绩效分析器实现（PerformanceAnalyzer）
 - 风险分析器实现（RiskAnalyzer）
@@ -64,8 +64,8 @@ easy-quant/
 ├── backtest/               # ✅ 回测引擎模块（已完成）
 │   ├── engine/           # ✅ 回测引擎核心
 │   │   ├── backtest_engine.py # ✅ 回测引擎主类
-│   │   ├── portfolio.py     # ✅ 组合管理器
-│   │   └── order_executor.py # ✅ 订单执行器
+│   │   ├── portfolio.py     # ✅ 组合管理器（唯一撮合权威）
+│   │   └── position_sizer.py # ✅ 仓位计算器
 │   ├── datafeed/         # ✅ 数据源
 │   │   └── historical_datafeed.py # ✅ 历史数据源
 │   ├── analyzers/        # ✅ 分析器
@@ -404,8 +404,7 @@ python examples/demo_unified_strategy.py
 
 **核心功能实现情况：**
 - [x] **回测引擎**：`BacktestEngine`核心引擎
-- [x] **组合管理**：`Portfolio`持仓和现金管理
-- [x] **订单执行**：`OrderExecutor`订单处理
+- [x] **组合管理**：`Portfolio`持仓、现金与撮合（佣金/滑点）
 - [x] **历史数据源**：`HistoricalDataFeed`数据源
 - [x] **绩效分析**：`PerformanceAnalyzer`绩效指标
 - [x] **风险分析**：`RiskAnalyzer`风险指标

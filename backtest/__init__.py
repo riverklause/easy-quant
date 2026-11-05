@@ -5,7 +5,6 @@
 
 from backtest.engine.backtest_engine import BacktestEngine
 from backtest.engine.portfolio import Portfolio
-from backtest.engine.order_executor import OrderExecutor, Order, OrderType, OrderStatus
 from backtest.datafeed.historical_datafeed import HistoricalDataFeed
 from backtest.analyzers.performance import PerformanceAnalyzer
 from backtest.analyzers.risk import RiskAnalyzer
@@ -15,10 +14,6 @@ from backtest.results.result_store import BacktestResult
 __all__ = [
     'BacktestEngine',
     'Portfolio',
-    'OrderExecutor',
-    'Order',
-    'OrderType',
-    'OrderStatus',
     'HistoricalDataFeed',
     'PerformanceAnalyzer',
     'RiskAnalyzer',

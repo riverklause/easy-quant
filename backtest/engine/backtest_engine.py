@@ -14,7 +14,6 @@ logger = logging.getLogger(__name__)
 
 from backtest.engine.portfolio import Portfolio
 from backtest.engine.position_sizer import FixedFractionSizer, PositionSizer
-from backtest.engine.order_executor import SimpleOrderExecutor, OrderSide
 from backtest.datafeed.historical_datafeed import HistoricalDataFeed
 from backtest.analyzers.performance import PerformanceAnalyzer
 from backtest.analyzers.risk import RiskAnalyzer
@@ -69,11 +68,6 @@ class BacktestEngine:
             initial_capital=initial_capital,
             commission_rate=commission_rate,
             slippage=slippage
-        )
-        
-        self.order_executor = SimpleOrderExecutor(
-            slippage=slippage,
-            commission_rate=commission_rate
         )
         
         self.performance_analyzer = PerformanceAnalyzer(risk_free_rate=risk_free_rate)
