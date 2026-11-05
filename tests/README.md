@@ -51,6 +51,9 @@
 | M1 | `run()` / `run_async()` 两条入口产出相同结果（合并后成同一实现） | 保护性灯；当前即绿，合并后仍绿（证明"结果一致"而不是"实现方式"） | ✓ |
 | M2 | `run_async(symbols=None)` 回落到默认标的（async 路径以前绕过 `_load_data`） | 合并前红（`TypeError: 'NoneType' object is not iterable`），合并修掉；回退 `_load_data` 里的 `symbols is None` 解析 → 只有 M2 红，M1 不受影响 | ✓ |
 | P1 | 三个预定义组合是配置草稿——必须可导入且声明策略槽位 | 保护性灯；删除某个 preset 或改 `_build_portfolio` 为空 → 只有 P1 红 | ✓ |
+| FL0 | 生产包（backtest/data/indicators/screener/strategy/web）不得 import research | 保护性；今天即绿；在生产包里写 `import research.xxx` → 只有 FL0 红 | ✓ |
+| FL1 | 因子面板因果性——t 列只依赖 ≤t 的数据（与 T3 同范式） | 回退 `momentum` 加 `.shift(-1)` 泄漏未来 → 只有 FL1 红（位置 5 第一次 diff，`nan != 0.0495...`） | ✓ |
+| FL1b | `to_panel` 按日期并集对齐、缺失保留 NaN | 回退为 inner join → 只有 FL1b 红（`assert 39 == 40`） | ✓ |
 
 R1 之后，L4b / L4b2 的绿依赖 L4c 的声明式装配；本表记录的是各自独立修复时的回退结果。
 
