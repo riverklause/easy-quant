@@ -8,7 +8,11 @@ import dash_bootstrap_components as dbc
 import pandas as pd
 from datetime import datetime
 
+import logging
+
 from data.storage.local_storage import LocalStorageManager
+
+logger = logging.getLogger(__name__)
 
 # 元数据路径统一由 LocalStorageManager 决定：data/meta/{name}.parquet
 _storage = LocalStorageManager()
@@ -125,9 +129,7 @@ def save_or_cancel_stock(n_save_clicks, n_cancel_clicks, stock_code):
             return get_stock_list_display(), dbc.Alert(f'股票 {stock_code} ({name}) 添加成功', color='success'), '', ''
             
         except Exception as e:
-            import traceback
-            print(f'保存股票失败: {e}')
-            traceback.print_exc()
+            logger.exception('保存股票失败')
             return get_stock_list_display(), dbc.Alert(f'保存失败: {str(e)}', color='danger'), '', ''
     
     return no_update, no_update, no_update, no_update
@@ -154,9 +156,7 @@ def remove_stocks(n_clicks, selected_codes):
         return get_stock_list_display(), dbc.Alert(f'成功删除 {deleted_count} 只股票', color='success')
         
     except Exception as e:
-        import traceback
-        print(f'删除股票失败: {e}')
-        traceback.print_exc()
+        logger.exception('删除股票失败')
         return get_stock_list_display(), dbc.Alert(f'删除失败: {str(e)}', color='danger')
 
 
@@ -177,42 +177,40 @@ def update_stock_list(n_update_clicks, n_confirm_clicks, n_cancel_clicks, data_m
         return False, get_stock_list_display(), ""
     
     if triggered_id == "confirm-update-btn":
-        print("开始更新股票列表...")
+        logger.info("开始更新股票列表")
         
         try:
             if data_manager is None:
-                print("data_manager 为 None")
+                logger.error("data_manager 为 None")
                 return False, get_stock_list_display(), dbc.Alert("data_manager 未初始化", color="danger")
             
             futu_client = data_manager.clients.get('futu')
             if futu_client:
-                print("获取股票基本信息...")
+                logger.info("获取股票基本信息")
                 success, stock_info = futu_client.get_stock_basicinfo()
                 if success and not stock_info.empty:
                     stock_info.to_parquet(STOCK_BASIC_INFO_FILE, index=False)
-                    print(f"股票基本信息已保存: {len(stock_info)} 条")
+                    logger.info("股票基本信息已保存: %s 条", len(stock_info))
                 else:
                     msg = "获取股票基本信息失败"
-                    print(msg)
+                    logger.error(msg)
                     return False, get_stock_list_display(), dbc.Alert(msg, color="danger")
                 
-                print("获取过滤后股票列表...")
+                logger.info("获取过滤后股票列表")
                 filtered_result = futu_client.get_basicfiltered_stocks()
                 if filtered_result and filtered_result[0]:
                     _, filtered_list, name_dict = filtered_result
                     filtered_df = pd.DataFrame({'code': filtered_list, 'name': [name_dict.get(c, '') for c in filtered_list]})
                     filtered_df.to_parquet(STOCK_BASIC_FILTERED_FILE, index=False)
-                    print(f"过滤后股票列表已保存: {len(filtered_list)} 条")
+                    logger.info("过滤后股票列表已保存: %s 条", len(filtered_list))
                     return False, get_stock_list_display(), dbc.Alert(f"股票列表更新成功！共 {len(filtered_list)} 只股票", color="success")
                 else:
                     return False, get_stock_list_display(), dbc.Alert("获取过滤后股票列表失败", color="warning")
             else:
-                print("未找到 futu 客户端")
+                logger.warning("未找到 futu 客户端")
                 return False, get_stock_list_display(), dbc.Alert("未找到 futu 客户端", color="danger")
         except Exception as e:
-            import traceback
-            print(f"更新股票列表失败: {e}")
-            traceback.print_exc()
+            logger.exception("更新股票列表失败")
             return False, get_stock_list_display(), dbc.Alert(f"更新失败: {str(e)}", color="danger")
     
     return False, get_stock_list_display(), ""

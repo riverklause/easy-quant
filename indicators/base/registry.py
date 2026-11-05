@@ -5,10 +5,14 @@
 
 import importlib
 import inspect
+import logging
 from typing import Dict, List, Optional, Type, Any
 from pathlib import Path
 import pkgutil
 from .base_indicator import BaseIndicator
+
+
+logger = logging.getLogger(__name__)
 
 
 class IndicatorRegistry:
@@ -172,13 +176,13 @@ class IndicatorRegistry:
                     try:
                         module = importlib.import_module(module_name)
                         self._register_indicators_from_module(module)
-                    except ImportError as e:
-                        print(f"无法导入模块 {module_name}: {e}")
+                    except ImportError:
+                        logger.exception("无法导入模块 %s", module_name)
             
             self._loaded_packages.add(package_name)
             
-        except ImportError as e:
-            print(f"无法导入包 {package_name}: {e}")
+        except ImportError:
+            logger.exception("无法导入包 %s", package_name)
     
     def load_indicators_from_directory(self, directory_path: str):
         """
@@ -210,8 +214,8 @@ class IndicatorRegistry:
                 full_module_name = f"{package_name}.{module_name}"
                 module = importlib.import_module(full_module_name)
                 self._register_indicators_from_module(module)
-            except ImportError as e:
-                print(f"无法导入模块 {full_module_name}: {e}")
+            except ImportError:
+                logger.exception("无法导入模块 %s", full_module_name)
     
     def _register_indicators_from_module(self, module):
         """

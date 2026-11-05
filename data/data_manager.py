@@ -5,6 +5,7 @@ from typing import Dict, List, Optional, Any, Union, Callable
 from datetime import datetime, timedelta
 import pandas as pd
 import asyncio
+import logging
 
 from .sources.futu_client import FutuAPIClient
 from .sources.yfinance_client import YFinanceClient
@@ -14,6 +15,8 @@ from .storage.local_storage import LocalStorageManager
 from .base_client import BaseDataSourceClient
 from utils.symbol_utils import convert_symbol_format,convert_symbols_format, validate_symbol_format, validate_symbols_format
 from utils.settings import settings
+
+logger = logging.getLogger(__name__)
 
 class DataManager:
     """
@@ -109,7 +112,7 @@ class DataManager:
         
         # 获取可用的数据源列表
         available_data_sources = self.config['available_data_sources']['available_data_sources']
-        print(available_data_sources)
+        logger.debug("可用数据源: %s", available_data_sources)
         # 初始化futu客户端参数
         if 'futu' in available_data_sources:
             temp_config = {**self.config['futu'], **self.config['available_data_sources']}
@@ -141,26 +144,26 @@ class DataManager:
                     if hasattr(client, 'connect') and callable(getattr(client, 'connect')):
                         result = client.connect()  # 同步调用
                         if not result:
-                            print(f"连接{client_name}失败")
+                            logger.warning("连接%s失败", client_name)
                         else:
-                            print(f"✅ 连接{client_name}成功")
+                            logger.info("连接%s成功", client_name)
                     else:
-                        print(f"客户端{client_name}没有connect方法")
-                except Exception as e:
-                    print(f"连接{client_name}失败: {e}")
+                        logger.warning("客户端%s没有connect方法", client_name)
+                except Exception:
+                    logger.exception("连接%s失败", client_name)
             
             # 检查连接状态
-            print("\n🔍 检查各客户端连接状态:")
+            logger.info("检查各客户端连接状态")
             for client_name, client in self.clients.items():
                 connected_status = getattr(client, 'connected', '无connected属性')
-                print(f"   {client_name}: {connected_status}")
+                logger.info("%s: %s", client_name, connected_status)
             
             self.connected = all(getattr(client, 'connected', False) for client in self.clients.values())
-            print(f"\n📊 总体连接状态: {self.connected}")
+            logger.info("总体连接状态: %s", self.connected)
             return self.connected
             
-        except Exception as e:
-            print(f"连接数据源失败: {e}")
+        except Exception:
+            logger.exception("连接数据源失败")
             self.connected = False
             return False
     
@@ -178,15 +181,15 @@ class DataManager:
                     if hasattr(client, 'disconnect') and callable(getattr(client, 'disconnect')):
                         client.disconnect()  # 同步调用
                     else:
-                        print(f"客户端{client_name}没有disconnect方法")
-                except Exception as e:
-                    print(f"断开{client_name}连接失败: {e}")
+                        logger.warning("客户端%s没有disconnect方法", client_name)
+                except Exception:
+                    logger.exception("断开%s连接失败", client_name)
             
             self.connected = False
             return True
             
-        except Exception as e:
-            print(f"断开数据源连接失败: {e}")
+        except Exception:
+            logger.exception("断开数据源连接失败")
             return False
     
     async def get_historical_data(
@@ -375,8 +378,8 @@ class DataManager:
             try:
                 is_healthy = client.health_check()
                 health_status[client_name] = is_healthy
-            except Exception as e:
-                print(f"检查{client_name}健康状态失败: {e}")
+            except Exception:
+                logger.exception("检查%s健康状态失败", client_name)
                 health_status[client_name] = False
         
         return health_status
@@ -438,7 +441,7 @@ class DataManager:
             data: 实时数据DataFrame，包含data_type和code字段
         """
         if data is None or data.empty:
-            print(f"警告: 收到空的实时数据")
+            logger.warning("收到空的实时数据")
             return
         
         data_type = data['data_type'].iloc[0] if 'data_type' in data.columns else None
@@ -447,7 +450,7 @@ class DataManager:
         if data_type and symbol:
             self.update_realtime_data(data_type, data, symbol)
         else:
-            print(f"警告: 收到无效的实时数据，缺少data_type或code字段")
+            logger.warning("收到无效的实时数据，缺少data_type或code字段")
     
     def update_realtime_data(self, data_type: str, data: pd.DataFrame, symbol: Optional[str] = None):
         """
@@ -763,7 +766,7 @@ class DataManager:
             bound_callback(data)
         
         client.register_callback(callback_adapter)
-        print(f"✅ 回调函数已注册到{data_source}")
+        logger.info("回调函数已注册到%s", data_source)
 
     def subscribe_realtime_data(
         self, 
@@ -796,7 +799,7 @@ class DataManager:
         try:
             # 检查symbols参数是否为None或空列表
             if symbols is None or len(symbols) == 0:
-                print("⚠️  警告: 未提供股票代码列表，无法订阅实时数据")
+                logger.warning("未提供股票代码列表，无法订阅实时数据")
                 return False
             
             # 转换股票代码格式
@@ -806,8 +809,8 @@ class DataManager:
             result = client.subscribe_realtime_data(converted_symbols, data_types)
             return result
             
-        except Exception as e:
-            print(f"订阅实时数据失败: {e}")
+        except Exception:
+            logger.exception("订阅实时数据失败")
             return False
     
     def add_realtime_callback(
@@ -841,6 +844,6 @@ class DataManager:
             client.add_data_callback(callback)
             return True
             
-        except Exception as e:
-            print(f"添加实时数据回调失败: {e}")
+        except Exception:
+            logger.exception("添加实时数据回调失败")
             return False

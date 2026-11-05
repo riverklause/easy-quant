@@ -21,7 +21,10 @@ import dash_bootstrap_components as dbc
 from dash_extensions import WebSocket
 from datetime import datetime
 import diskcache
+import logging
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 data_state_manager = None
 data_manager = None
@@ -271,26 +274,25 @@ def init_data_sources(config=None):
     from data.data_manager import DataManager
 
     data_state_manager = DataStateManager(socketio=None)
-    print("✓ DataStateManager 初始化完成")
+    logger.info("DataStateManager 初始化完成")
     
     data_manager = DataManager(config)
     if not data_manager.connect_all():
-        print("⚠ 警告: 数据管理器连接失败")
+        logger.warning("数据管理器连接失败")
     else:
-        print("✓ DataManager 连接成功")
+        logger.info("DataManager 连接成功")
 
     try:
         if 'futu_RT' in data_manager.clients:
             futu_rt_processor = data_manager.clients['futu_RT']
             futu_rt_processor.register_callback(data_state_manager.update_quote)
-            print("✓ FutuRTProcessor 回调注册成功")
+            logger.info("FutuRTProcessor 回调注册成功")
         else:
-            print("⚠ 警告: 未找到 futu_RT 客户端，实时数据功能将不可用")
-    except Exception as e:
-        print(f"⚠ 警告: FutuRTProcessor 连接失败: {e}")
-        print("  实时数据功能将不可用，但Web界面仍可使用")
+            logger.warning("未找到 futu_RT 客户端，实时数据功能将不可用")
+    except Exception:
+        logger.exception("FutuRTProcessor 连接失败，实时数据功能将不可用，但 Web 界面仍可使用")
 
-    print("数据源初始化完成")
+    logger.info("数据源初始化完成")
 
 
 def start_server(host='::', port=8050, debug=True):
@@ -311,8 +313,7 @@ def start_server(host='::', port=8050, debug=True):
 
     BaseWSGIServer.server_bind = _dualstack_server_bind
 
-    print(f"\n🚀 服务器启动中: http://[::]:{port} (IPv4/IPv6 双栈)")
-    print("按 Ctrl+C 停止服务器\n")
+    logger.info("服务器启动中: http://[::]:%s (IPv4/IPv6 双栈)", port)
     app.run(host=host, port=port, debug=debug)
 
 

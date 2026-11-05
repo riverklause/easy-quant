@@ -9,6 +9,9 @@ from dataclasses import dataclass, field
 import pandas as pd
 import json
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -172,7 +175,7 @@ class BacktestResult:
         with open(filepath, 'w', encoding='utf-8') as f:
             json.dump(result_dict, f, indent=2, ensure_ascii=False)
         
-        print(f"回测结果已保存到: {filepath}")
+        logger.info("回测结果已保存到: %s", filepath)
     
     def _convert_to_serializable(self, obj: Any) -> Any:
         """
