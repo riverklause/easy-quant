@@ -300,3 +300,64 @@ def test_FL7b_ic_decay_is_strictly_monotone_for_an_iid_predictor():
     assert decay.loc[1, "mean_ic"] == pytest.approx(1.0)
     assert (decay["mean_ic"].diff().dropna() < 0).all()   # 严格下降
     assert decay["n"].is_monotonic_decreasing             # 样本随 horizon 变少
+
+
+# ===== FL8：因子相关性矩阵（逐日截面 Spearman 再取均值）=====
+
+def test_FL8_correlation_is_rank_based_and_symmetric():
+    """单调变换不改相关性（Pearson 会改）；f 与 -f 必须恰好 -1；矩阵对称、对角为 1。"""
+    from research.factor_lab.cross_section import factor_correlation
+
+    f = _value_panel(rows=12, n=20, seed=1)          # 0~1，立方后强烈非线性
+    panels = {"f": f, "g": f.map(np.power, exponent=3), "h": -f}
+
+    r = factor_correlation(panels)
+
+    assert list(r.matrix.columns) == ["f", "g", "h"]
+    assert r.matrix.loc["f", "g"] == pytest.approx(1.0)
+    assert r.matrix.loc["f", "h"] == pytest.approx(-1.0)
+    assert np.allclose(np.diag(r.matrix.to_numpy()), 1.0)
+    pd.testing.assert_frame_equal(r.matrix, r.matrix.T)
+
+    # 钉住"用的是秩"：同样的数据按 Pearson 算明显小于 1
+    pearson = f.corrwith(panels["g"], axis=1).mean()
+    assert pearson < 0.99
+
+
+def test_FL8b_correlation_averages_each_date_not_the_pooled_panel():
+    """两天符号相反：逐日相关再取均值 = 0，把两天堆起来算会得到别的数。
+
+    直接对面板求相关会把时间维度混进来——这正是这条灯要钉住的事。
+    """
+    from research.factor_lab.cross_section import factor_correlation
+
+    idx = pd.bdate_range("2024-01-01", periods=3)
+    cols = [f"S{i}" for i in range(6)]
+    f = pd.DataFrame([[1.0, 2, 3, 4, 5, 6]] * 3, index=idx, columns=cols)
+    g = pd.DataFrame([[2.0, 4, 6, 8, 10, 12],
+                      [12.0, 10, 8, 6, 4, 2],
+                      [1.0, 2, 4, 3, 6, 5]], index=idx, columns=cols)
+
+    r = factor_correlation({"f": f, "g": g})
+    expected = (1.0 - 1.0 + 15.5 / 17.5) / 3          # 第三日秩相关 = 15.5/17.5
+
+    assert r.n.loc["f", "g"] == 3
+    assert r.matrix.loc["f", "g"] == pytest.approx(expected)
+
+    pooled = pd.concat([f.stack(), g.stack()], axis=1).corr(method="spearman")
+    assert not r.matrix.loc["f", "g"] == pytest.approx(pooled.iloc[0, 1])
+
+
+def test_FL8c_correlation_reuses_min_stocks_per_date():
+    """某日只剩 2 个成对有效样本 ⇒ 该日不进平均，n 也随之少 1。"""
+    from research.factor_lab.cross_section import factor_correlation
+
+    f = _value_panel(rows=6, n=10, seed=3)
+    g = _value_panel(rows=6, n=10, seed=4)
+    f.loc[f.index[2], f.columns[2:]] = np.nan          # 该日只剩 2 个成对样本
+
+    r = factor_correlation({"f": f, "g": g}, min_stocks=5)
+
+    assert r.n.loc["f", "g"] == 5                      # 6 行 - 被丢的那行
+    assert r.n.loc["g", "f"] == 5                      # 对称
+    assert r.n.loc["f", "f"] == 5
