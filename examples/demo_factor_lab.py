@@ -8,6 +8,7 @@
 
 import logging
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 import pandas as pd
@@ -18,6 +19,7 @@ if str(_ROOT) not in sys.path:
 
 from research.factor_lab import factors
 from research.factor_lab.cross_section import factor_correlation, paired_counts
+from research.factor_lab.decay import ic_decay
 from research.factor_lab.ic import ic_summary, rank_ic
 from research.factor_lab.labels import forward_returns
 from research.factor_lab.panel import to_panel
@@ -26,6 +28,7 @@ DATA_DIR = _ROOT / "data" / "historical" / "yfinance"
 REQUIRED = ("open", "high", "low", "close", "volume")
 HORIZON = 5
 MIN_STOCKS = 5
+HORIZONS = (1, 5, 10, 20)
 
 
 def _normalize(df: pd.DataFrame, name: str) -> tuple[str, pd.DataFrame]:
@@ -69,6 +72,18 @@ def load_daily() -> dict[str, pd.DataFrame]:
     return out
 
 
+@contextmanager
+def _quiet_ic_logger():
+    """丢弃数已进表格，日志不再逐条刷屏；退出时恢复调用方的级别。"""
+    logger = logging.getLogger("research.factor_lab.ic")
+    previous = logger.level
+    logger.setLevel(logging.ERROR)
+    try:
+        yield
+    finally:
+        logger.setLevel(previous)
+
+
 def main() -> None:
     bars = load_daily()
     close = to_panel(bars, "close")
@@ -79,38 +94,41 @@ def main() -> None:
     print(f"每日有效样本：中位数 {counts.median():.0f}，最小 {counts.min():.0f}"
           f"（min_stocks={MIN_STOCKS}）")
     print("drop = 因有效样本不足被丢弃的截面数（与日志 warning 同源，这里并入表格）")
-    print("t    = IR * sqrt(n)，仅作描述：10 只股票的样本量下不构成显著性结论")
+    print(f"t     = IR * sqrt(n)（假设 iid，**高估**；前瞻 {HORIZON} 日重叠）")
+    print(f"t_adj = t / sqrt({HORIZON})，用新息样本数校正；10 只股票下均不显著")
     print(f"ACTIVE = {', '.join(n.removesuffix('_factor') for n in factors.ACTIVE)}"
           "（相关 > 0.85 视为同一因子，每个维度只留一个代表）\n")
 
     header = (f"{'factor':22s} {'n':>4s} {'drop':>4s} {'meanIC':>8s} "
-              f"{'std':>7s} {'IR':>7s} {'IC>0':>6s} {'t':>6s}")
+              f"{'std':>7s} {'IR':>7s} {'IC>0':>6s} {'t':>6s} {'t_adj':>7s}")
     print(header)
     print("-" * len(header))
 
-    ic_logger = logging.getLogger("research.factor_lab.ic")
-    previous_level = ic_logger.level
-    ic_logger.setLevel(logging.ERROR)          # 丢弃数已进表格，不再逐条刷屏
     panels: dict[str, pd.DataFrame] = {}
-    try:
+    ics: dict[str, pd.Series] = {}
+    with _quiet_ic_logger():
         for name in factors.__all__:
             panel = getattr(factors, name)(bars)
             panels[name] = panel                    # 矩阵要用全目录，做剪枝证据
             if name not in factors.ACTIVE:
                 continue
             ic = rank_ic(panel, fwd, min_stocks=MIN_STOCKS)
+            ics[name] = ic
             dropped = int((paired_counts(panel, fwd) < MIN_STOCKS).sum())
             s = ic_summary(ic)
 
             if s.n == 0:
                 print(f"{name:22s} {0:4d} {dropped:4d} "
-                      f"{'-':>8s} {'-':>7s} {'-':>7s} {'-':>6s} {'-':>6s}")
+                      f"{'-':>8s} {'-':>7s} {'-':>7s} {'-':>6s} {'-':>6s} {'-':>7s}")
                 continue
 
             print(f"{name:22s} {s.n:4d} {dropped:4d} {s.mean:+8.4f} {s.std:7.4f} "
-                  f"{s.ir:+7.3f} {s.positive_ratio:6.0%} {s.t_stat:+6.2f}")
-    finally:
-        ic_logger.setLevel(previous_level)     # 恢复：别把调用方的日志级别改坏
+                  f"{s.ir:+7.3f} {s.positive_ratio:6.0%} {s.t_stat:+6.2f} "
+                  f"{s.t_stat / HORIZON ** 0.5:+7.2f}")
+
+    common_n = len(set.intersection(*(set(ics[n].index) for n in ics)))
+    print(f"\n共同评估窗口 n = {common_n}（warmup 不同导致各行的 n 不同，"
+          "横向比 meanIC 时请以这一行为准）")
 
     corr = factor_correlation(panels, min_stocks=MIN_STOCKS)
     short = {name: name.removesuffix("_factor") for name in panels}
@@ -120,6 +138,21 @@ def main() -> None:
     mn, mx = int(corr.n.to_numpy().min()), int(corr.n.to_numpy().max())
     print(f"有效截面数 {mn}~{mx}：与总天数 {len(close)} 的差 = 被丢弃的截面 + 相关未定义的截面"
           "（后者在 rank_ic 里是静默丢的，这里由 n 暴露出来）")
+
+    print(f"\nIC 衰减（horizon={HORIZONS}，单元格 = meanIC(n)；"
+          "n 随 horizon 变小、窗口重叠，t 需按 sqrt(h) 折减）")
+    header = f"{'factor':22s}" + "".join(f"{'h' + str(h):>13s}" for h in HORIZONS)
+    print(header)
+    print("-" * len(header))
+
+    with _quiet_ic_logger():
+        for name in factors.ACTIVE:
+            decay = ic_decay(panels[name], close, horizons=HORIZONS,
+                             min_stocks=MIN_STOCKS)
+            cells = "".join(
+                f"{row.mean_ic:+7.3f}({row.n:4d})" for row in decay.itertuples()
+            )
+            print(f"{name:22s}{cells}")
 
 
 if __name__ == "__main__":
