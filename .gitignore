@@ -10,7 +10,21 @@ __pycache__/
 .cache/
 .cache.db*
 
-/data/historical
+# 数据目录：样本入库（data/meta、data/screener、data/realtime），
+# 原始历史与运行产物不入库
+data/historical/
+data/cache/
+data/backtest/
+data/logs/
+
+# 账户 / 持仓 / 密钥类文件禁止入库
+.env
+data/**/*.key
+data/**/*.pem
+data/**/*account*
+data/**/*credential*
+data/**/*position*
+data/**/*secret*
 
 # 调试输出
 /test_output.txt
