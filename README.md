@@ -444,11 +444,11 @@ python examples/demo_unified_strategy.py
 - **数据获取**: futu-api, yfinance
 - **数据存储**: pyarrow (Parquet格式)
 - **异步支持**: asyncio, aiolimiter
-- **Web框架**: FastAPI, uvicorn
-- **测试框架**: pytest, pytest-asyncio
+- **Web框架**: Dash + dash-extensions（Server 为 werkzeug）
+- **测试框架**: pytest（未使用 pytest-asyncio，异步用例用 `asyncio.run` 驱动）
 - **缓存**: diskcache（Dash 后台回调）
-- **日志**: loguru
-- **代码质量**: black, flake8, mypy
+- **日志**: 标准库 logging（`utils.logger.configure_logging`）
+- **代码质量**: 暂无 lint/format 配置
 
 ## 贡献指南
 
