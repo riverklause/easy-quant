@@ -22,7 +22,7 @@ from .panel import to_panel
 
 __all__ = [
     "adx_factor", "atr_pct_factor", "bias_factor", "bollinger_pb_factor",
-    "cci_factor", "kdj_k_factor", "rsi_factor", "wr_factor",
+    "cci_factor", "kdj_k_factor", "macd_hist_pct_factor", "rsi_factor", "wr_factor",
 ]
 
 
@@ -86,3 +86,15 @@ def bollinger_pb_factor(stock_data: Dict[str, pd.DataFrame],
     lower = indicator_factor(stock_data, ind, "bb_lower")
     upper = indicator_factor(stock_data, ind, "bb_upper")
     return (to_panel(stock_data, "close") - lower) / (upper - lower)
+
+
+def macd_hist_pct_factor(stock_data: Dict[str, pd.DataFrame],
+                         fast: int = 12, slow: int = 26,
+                         signal: int = 9) -> pd.DataFrame:
+    """MACD 柱 / close（价格量纲，必须归一化）。"""
+    from indicators.technical.trend.moving_average import MACD
+    hist = indicator_factor(stock_data,
+                            MACD(fast_period=fast, slow_period=slow,
+                                 signal_period=signal),
+                            "histogram")
+    return hist / to_panel(stock_data, "close")
