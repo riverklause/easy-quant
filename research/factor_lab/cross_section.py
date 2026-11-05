@@ -15,6 +15,22 @@ def paired_counts(left: pd.DataFrame, right: pd.DataFrame) -> pd.Series:
     return (left.notna() & right.notna()).sum(axis=1)
 
 
+def paired_rank_corr(left: pd.DataFrame, right: pd.DataFrame) -> pd.Series:
+    """逐日截面秩相关：**先取成对支撑集，再在交集上取秩**。
+
+    为什么先 mask 再 rank：若两侧分别在自己完整的支撑集上取秩，
+    交集上的秩不是彼此的仿射变换（秩间距被非交集样本拉伸），
+    Pearson-on-ranks 会偏离真正的样本 Spearman。
+
+    rank_ic 与 factor_correlation 共用这一份实现，避免两处口径漂移。
+    """
+    common = left.columns.intersection(right.columns)
+    a, b = left[common], right[common]
+    mask = a.notna() & b.notna()
+    return (a.where(mask).rank(axis=1)
+            .corrwith(b.where(mask).rank(axis=1), axis=1))
+
+
 @dataclass(frozen=True)
 class CorrelationResult:
     """因子相关性矩阵及其支撑样本数。
@@ -32,14 +48,13 @@ def _cross_section_rank_corr(left: pd.DataFrame,
                              min_stocks: int) -> tuple[float, int]:
     """一对因子的逐日截面 Spearman 均值，返回 (均值, 有效截面数)。
 
-    秩在各面板自身支撑集上取、再由 corrwith 按 symbol 对齐——与 rank_ic 完全一致，
+    秩在成对支撑集上取——与 rank_ic 共用 paired_rank_corr，
     这样"IC"和"相关性矩阵"不会对同一份数据给出两种口径。
     """
     common = left.columns.intersection(right.columns)
     a, b = left[common], right[common]
 
-    per_date = (a.rank(axis=1)
-                .corrwith(b.rank(axis=1), axis=1))
+    per_date = paired_rank_corr(a, b)
     per_date = per_date.where(paired_counts(a, b) >= min_stocks).dropna()
 
     if per_date.empty:

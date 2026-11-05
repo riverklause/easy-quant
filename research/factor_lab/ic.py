@@ -10,7 +10,7 @@ from math import isnan, sqrt
 
 import pandas as pd
 
-from .cross_section import paired_counts
+from .cross_section import paired_counts, paired_rank_corr
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +33,11 @@ def rank_ic(factor: pd.DataFrame,
     left = factor[common]
     right = forward_returns[common]
 
-    # 成对有效样本：与分档共用同一个定义
+    # 成对有效样本：与分档、相关性矩阵共用同一个定义
     counts = paired_counts(left, right)
 
-    ic = left.rank(axis=1).corrwith(right.rank(axis=1), axis=1)
-    ic = ic.where(counts >= min_stocks)
+    # 秩在成对支撑集上取：与 factor_correlation 共用同一份实现
+    ic = paired_rank_corr(left, right).where(counts >= min_stocks)
 
     too_small = int((counts < min_stocks).sum())
     if too_small:
