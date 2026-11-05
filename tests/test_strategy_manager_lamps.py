@@ -158,3 +158,38 @@ def test_SM7_portfolio_routing_and_signal_bookkeeping():
     manager.clear_signals("S")
     assert manager.get_global_signals("S") == []
     assert manager.get_global_signals("G") == [signals[0]]
+
+
+class _BrokenInitStrategy(_StubStrategy):
+    def define_rules(self, **kwargs):
+        super().define_rules(**kwargs)
+        raise RuntimeError("init boom")
+
+
+def test_SM8_failed_initialize_must_not_leave_running():
+    """初始化失败时，is_running 必须保持 False（不能“状态说在跑、其实没初始化”）。"""
+    manager = StrategyManager()
+    strategy = _BrokenInitStrategy("bad")
+    manager.register_strategy(strategy)
+
+    with pytest.raises(RuntimeError):
+        manager.start_strategy("bad")
+
+    assert strategy.is_running is False
+    assert manager.is_running is False
+
+
+def test_SM9_manager_running_state_is_derived():
+    """manager.is_running 必须是派生状态：单停最后一个策略后归 False，可再次 start_all。"""
+    manager = StrategyManager()
+    strategy = _StubStrategy("s1")
+    manager.register_strategy(strategy)
+
+    manager.start_strategy("s1")
+    assert manager.is_running is True
+
+    manager.stop_strategy("s1")
+    assert manager.is_running is False
+
+    manager.start_all_strategies()
+    assert strategy.is_running is True
