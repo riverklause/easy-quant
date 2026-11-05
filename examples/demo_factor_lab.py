@@ -79,7 +79,9 @@ def main() -> None:
     print(f"每日有效样本：中位数 {counts.median():.0f}，最小 {counts.min():.0f}"
           f"（min_stocks={MIN_STOCKS}）")
     print("drop = 因有效样本不足被丢弃的截面数（与日志 warning 同源，这里并入表格）")
-    print("t    = IR * sqrt(n)，仅作描述：10 只股票的样本量下不构成显著性结论\n")
+    print("t    = IR * sqrt(n)，仅作描述：10 只股票的样本量下不构成显著性结论")
+    print(f"ACTIVE = {', '.join(n.removesuffix('_factor') for n in factors.ACTIVE)}"
+          "（相关 > 0.85 视为同一因子，每个维度只留一个代表）\n")
 
     header = (f"{'factor':22s} {'n':>4s} {'drop':>4s} {'meanIC':>8s} "
               f"{'std':>7s} {'IR':>7s} {'IC>0':>6s} {'t':>6s}")
@@ -93,7 +95,9 @@ def main() -> None:
     try:
         for name in factors.__all__:
             panel = getattr(factors, name)(bars)
-            panels[name] = panel
+            panels[name] = panel                    # 矩阵要用全目录，做剪枝证据
+            if name not in factors.ACTIVE:
+                continue
             ic = rank_ic(panel, fwd, min_stocks=MIN_STOCKS)
             dropped = int((paired_counts(panel, fwd) < MIN_STOCKS).sum())
             s = ic_summary(ic)
@@ -110,8 +114,8 @@ def main() -> None:
 
     corr = factor_correlation(panels, min_stocks=MIN_STOCKS)
     short = {name: name.removesuffix("_factor") for name in panels}
-    print("\n因子互相关（逐日截面 Spearman 均值；正负号跟着各自的原始刻度，"
-          "RSI 与 WR 同号是正常的）")
+    print("\n因子互相关（全目录 9 个，剪枝证据；逐日截面 Spearman 均值。"
+          "正负号跟着各自的原始刻度，RSI 与 WR 同号是正常的）")
     print(corr.matrix.rename(index=short, columns=short).round(2).to_string())
     mn, mx = int(corr.n.to_numpy().min()), int(corr.n.to_numpy().max())
     print(f"有效截面数 {mn}~{mx}：与总天数 {len(close)} 的差 = 被丢弃的截面 + 相关未定义的截面"
