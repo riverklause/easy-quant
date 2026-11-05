@@ -44,8 +44,14 @@
 | LG0 | `utils/` 下模块导入即崩（`settings.LOG_LEVEL` / `DATA_BASE_PATH`） | 回退 `utils/logger.py` → 4 个 LG0 全红（`AttributeError: LOG_LEVEL`）；回退 `file_utils` 的两处引用 → 只有 LG0[file_utils] 红（`DATA_BASE_PATH`） | ✓ |
 | LG1 | `configure_logging` 重复调用叠加 handler（保护性灯） | 去掉 handler 清理 → `assert 6 == 2`（pytest 自有 4 个 + 我们的 2 个）；只去掉 `_CONFIGURED` 仍绿 | ✓ |
 | LG1b | 摘掉 handler 未 `close()`，泄漏文件句柄（保护性灯） | 去掉 `handler.close()` → 只有 LG1b 红（`stream is None` 断言失败），LG1 仍绿 | ✓ |
+| LG2 | utils/ 下第三方 import 必须在 requirements.txt 里声明 | 删掉 `holidays` 行 → 只有 LG2 红；反向（requirements 写了没人用）暂未覆盖 | ✓ |
+| LG3 | `utils.date_utils` 可导入（依赖 `holidays`） | 装包后自动生效；目前以 skipped 形式存在，不藏着 | ✓（skipped）|
 
 R1 之后，L4b / L4b2 的绿依赖 L4c 的声明式装配；本表记录的是各自独立修复时的回退结果。
+
+### 已知缺口
+
+- `utils/date_utils.py` 依赖 `holidays`，已在 `requirements.txt` 声明但当前环境未安装：`LG3` 以 skipped 形式存在，装包后自动启用，届时 `LG0` 可把该模块加回导入清单。
 
 运行：
 
