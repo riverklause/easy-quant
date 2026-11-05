@@ -309,7 +309,7 @@ def test_FL8_correlation_is_rank_based_and_symmetric():
     from research.factor_lab.cross_section import factor_correlation
 
     f = _value_panel(rows=12, n=20, seed=1)          # 0~1，立方后强烈非线性
-    panels = {"f": f, "g": f.map(np.power, exponent=3), "h": -f}
+    panels = {"f": f, "g": f.map(lambda x: x ** 3), "h": -f}
 
     r = factor_correlation(panels)
 
