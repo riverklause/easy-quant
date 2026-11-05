@@ -57,7 +57,7 @@ class TechnicalStrategy(BaseStrategy):
         """
         # 定义策略规则
         self.define_rules(**kwargs)
-        print(f"🔄 技术指标策略 '{self.name}' 初始化完成")
+        logger.info("技术指标策略 '%s' 初始化完成", self.name)
     
     def define_rules(self, **kwargs):
         """

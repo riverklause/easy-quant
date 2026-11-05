@@ -139,9 +139,9 @@ class StrategyExecutor:
         except IndicatorCalculationError:
             self.execution_stats['failed_executions'] += 1
             raise
-        except Exception as e:
+        except Exception:
             self.execution_stats['failed_executions'] += 1
-            print(f"执行策略 '{strategy.name}' 失败: {e}")
+            logger.exception("执行策略 '%s' 失败", strategy.name)
             return []
     
     def execute_strategies(self,
@@ -202,7 +202,7 @@ class StrategyExecutor:
             )
             
             if not required_indicators:
-                print(f"⚠️ 策略 '{strategy_id}' 不需要指标，跳过")
+                logger.warning("策略 '%s' 不需要指标，跳过", strategy_id)
                 continue
             
             # 使用calculator批量计算指标
@@ -252,7 +252,7 @@ class StrategyExecutor:
         注意：这只是清除calculator的缓存，不是executor的缓存
         """
         self.calculator.clear_cache()
-        print("指标计算器缓存已清除")
+        logger.info("指标计算器缓存已清除")
     
     def register_indicator(self, indicator_name: str, indicator_class):
         """
@@ -263,7 +263,7 @@ class StrategyExecutor:
             indicator_class: 指标类
         """
         self.registry.register_indicator(indicator_name, indicator_class)
-        print(f"指标 '{indicator_name}' 注册到注册器")
+        logger.info("指标 '%s' 注册到注册器", indicator_name)
     
     def get_available_indicators(self) -> List[str]:
         """

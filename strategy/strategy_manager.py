@@ -5,9 +5,13 @@
 
 from typing import Dict, List, Optional, Callable, Any
 from datetime import datetime
+import logging
+
 from strategy.base_strategy import BaseStrategy
 from strategy.strategy_portfolio import StrategyPortfolio
 from strategy.strategy_executor import StrategyExecutor
+
+logger = logging.getLogger(__name__)
 
 
 class StrategyManager:
@@ -69,7 +73,7 @@ class StrategyManager:
             'timestamp': datetime.now()
         })
         
-        print(f"[+] 策略 '{strategy_id}' 注册成功")
+        logger.info("策略 '%s' 注册成功", strategy_id)
         return strategy_id
     
     def unregister_strategy(self, strategy_id: str):
@@ -90,7 +94,7 @@ class StrategyManager:
                 'timestamp': datetime.now()
             })
             
-            print(f"[-] 策略 '{strategy_id}' 注销成功")
+            logger.info("策略 '%s' 注销成功", strategy_id)
     
     def start_strategy(self, strategy_id: str, **kwargs):
         """
@@ -125,7 +129,7 @@ class StrategyManager:
             for strategy_id in self.strategies:
                 self.start_strategy(strategy_id, **kwargs)
             
-            print(f"[+] 所有策略启动成功，共 {len(self.strategies)} 个策略")
+            logger.info("所有策略启动成功，共 %s 个策略", len(self.strategies))
     
     def stop_strategy(self, strategy_id: str):
         """
@@ -152,7 +156,7 @@ class StrategyManager:
                 self.stop_strategy(strategy_id)
             
             self.is_running = False
-            print(f"🛑 所有策略已停止")
+            logger.info("所有策略已停止")
     
     def update_strategy(self, strategy_id: str, data: Any, **kwargs):
         """
@@ -311,7 +315,7 @@ class StrategyManager:
             for strategy in self.strategies.values():
                 strategy.signals.clear()
         
-        print(f"[+] 信号历史已清除")
+        logger.info("信号历史已清除")
     
     def _emit_event(self, event_type: str, event_data: Dict):
         """
@@ -325,8 +329,8 @@ class StrategyManager:
             for handler in self.event_handlers[event_type]:
                 try:
                     handler(event_data)
-                except Exception as e:
-                    print(f"[-] 事件处理器 '{handler.__name__}' 执行失败: {e}")
+                except Exception:
+                    logger.exception("事件处理器 '%s' 执行失败", handler.__name__)
     
     # 策略组合管理方法
     def add_portfolio(self, portfolio: StrategyPortfolio):
@@ -349,7 +353,7 @@ class StrategyManager:
             'timestamp': datetime.now()
         })
         
-        print(f"[+] 策略组合 '{portfolio_name}' 已添加")
+        logger.info("策略组合 '%s' 已添加", portfolio_name)
     
     def remove_portfolio(self, portfolio_name: str):
         """
@@ -364,7 +368,7 @@ class StrategyManager:
                 'portfolio_name': portfolio_name,
                 'timestamp': datetime.now()
             })
-            print(f"[-] 策略组合 '{portfolio_name}' 已移除")
+            logger.info("策略组合 '%s' 已移除", portfolio_name)
     
     def get_portfolio(self, portfolio_name: str) -> Optional[StrategyPortfolio]:
         """

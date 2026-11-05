@@ -7,6 +7,9 @@
 from typing import List, Dict, Optional, Any
 from abc import ABC, abstractmethod
 from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class BaseStrategy(ABC):
@@ -102,14 +105,14 @@ class BaseStrategy(ABC):
         """
         self.is_running = True
         self.initialize()
-        print(f"✅ 策略 {self.name} 启动")
+        logger.info("策略 %s 启动", self.name)
     
     def stop(self):
         """
         停止策略
         """
         self.is_running = False
-        print(f"🛑 策略 {self.name} 停止")
+        logger.info("策略 %s 停止", self.name)
     
     def record_signal(self, signal: Dict):
         """
@@ -169,4 +172,4 @@ class BaseStrategy(ABC):
         """
         self.params.update(kwargs)
         self.last_updated = datetime.now()
-        print(f"🔄 策略 {self.name} 参数更新: {kwargs}")
+        logger.info("策略 %s 参数更新: %s", self.name, kwargs)

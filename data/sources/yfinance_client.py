@@ -6,8 +6,11 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 import pandas as pd
 import yfinance as yf
+import logging
 
 from ..base_client import BaseDataSourceClient
+
+logger = logging.getLogger(__name__)
 
 
 class YFinanceClient(BaseDataSourceClient):
@@ -147,8 +150,8 @@ class YFinanceClient(BaseDataSourceClient):
                 }
                 
                 results.append(snapshot_data)
-            except Exception as e:
-                print(f"获取{symbol}市场快照失败: {e}")
+            except Exception:
+                logger.exception("获取%s市场快照失败", symbol)
                 continue
         
         # 转换为DataFrame
@@ -213,7 +216,7 @@ class YFinanceClient(BaseDataSourceClient):
             
         except Exception as e:
             # 如果批量下载失败，直接抛出异常
-            print(f"批量下载失败: {e}")
+            logger.exception("批量下载失败")
             raise e
     
     def _process_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:

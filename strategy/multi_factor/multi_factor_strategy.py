@@ -6,8 +6,11 @@
 from typing import List, Dict, Any, Union
 import pandas as pd
 import numpy as np
+import logging
 from strategy.base_strategy import BaseStrategy
 from strategy.multi_factor.factor_combiner import FactorCombiner
+
+logger = logging.getLogger(__name__)
 
 
 class MultiFactorStrategy(BaseStrategy):
@@ -75,9 +78,9 @@ class MultiFactorStrategy(BaseStrategy):
                     ).iloc[-1]
                     scores[symbol] = score
                 else:
-                    print(f"股票 {symbol} 缺少必要因子，跳过")
-            except Exception as e:
-                print(f"计算股票 {symbol} 评分失败: {e}")
+                    logger.warning("股票 %s 缺少必要因子，跳过", symbol)
+            except Exception:
+                logger.exception("计算股票 %s 评分失败", symbol)
                 continue
         
         return pd.Series(scores)
@@ -233,7 +236,7 @@ class MultiFactorStrategy(BaseStrategy):
             **kwargs: 初始化参数
         """
         # 可以在这里进行额外的初始化操作
-        print(f"🔄 策略 '{self.name}' 初始化完成")
+        logger.info("策略 '%s' 初始化完成", self.name)
     
     def generate_signals(self, factors_data: Dict[str, pd.DataFrame], **kwargs) -> List[Dict]:
         """
@@ -282,8 +285,8 @@ class MultiFactorStrategy(BaseStrategy):
             self.record_signal(signal)
             signals.append(signal)
             
-        except Exception as e:
-            print(f"❌ 策略 '{self.name}' 生成信号失败: {e}")
+        except Exception:
+            logger.exception("策略 '%s' 生成信号失败", self.name)
         
         return signals
     

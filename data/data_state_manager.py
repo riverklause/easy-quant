@@ -8,8 +8,11 @@ from datetime import datetime
 import pandas as pd
 import numpy as np
 import json
+import logging
 
 from data.storage.local_storage import LocalStorageManager
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -197,8 +200,8 @@ class DataStateManager:
                 for callback in self._alert_callbacks:
                     try:
                         callback(record)
-                    except Exception as e:
-                        print(f"告警回调错误: {e}")
+                    except Exception:
+                        logger.exception("告警回调错误")
 
                 if self._socketio:
                     self._socketio.emit('alert', {
@@ -221,16 +224,16 @@ class DataStateManager:
             for callback in self._strategy_callbacks:
                 try:
                     callback(symbol, quote, self)
-                except Exception as e:
-                    print(f"策略执行错误: {e}")
+                except Exception:
+                    logger.exception("策略执行错误")
 
     def _notify_ui_update(self) -> None:
         """通知 UI 更新"""
         for callback in self._ui_update_callbacks:
             try:
                 callback(self._last_update_data)
-            except Exception as e:
-                print(f"UI 更新回调错误: {e}")
+            except Exception:
+                logger.exception("UI 更新回调错误")
 
         if self._socketio:
             self._socketio.emit('data_update', self._last_update_data)
@@ -301,8 +304,8 @@ class DataStateManager:
             file_path = self._storage.build_meta_path('AlertConfig')
             if data:
                 pd.DataFrame(data).to_parquet(file_path)
-        except Exception as e:
-            print(f"保存告警配置失败: {e}")
+        except Exception:
+            logger.exception("保存告警配置失败")
 
     def _load_alert_configs(self) -> None:
         """从文件加载告警配置"""
@@ -318,8 +321,8 @@ class DataStateManager:
                         enabled=row['enabled'],
                         created_at=datetime.fromisoformat(row['created_at'])
                     ))
-        except Exception as e:
-            print(f"加载告警配置失败: {e}")
+        except Exception:
+            logger.exception("加载告警配置失败")
 
     def update_strategy_status(self, strategy_id: str, **kwargs) -> None:
         """更新策略状态"""
@@ -388,8 +391,8 @@ class DataStateManager:
             file_path = self._storage.build_meta_path('StrategyStatus')
             if data:
                 pd.DataFrame(data).to_parquet(file_path)
-        except Exception as e:
-            print(f"保存策略状态失败: {e}")
+        except Exception:
+            logger.exception("保存策略状态失败")
 
     def _load_strategy_status(self) -> None:
         """从文件加载策略状态"""
@@ -410,5 +413,5 @@ class DataStateManager:
                         logs=json.loads(row.get('logs', '[]'))
                     )
                     self._strategy_status[row['strategy_id']] = status
-        except Exception as e:
-            print(f"加载策略状态失败: {e}")
+        except Exception:
+            logger.exception("加载策略状态失败")

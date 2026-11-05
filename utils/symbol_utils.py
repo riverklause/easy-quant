@@ -4,7 +4,10 @@
 """
 from typing import Optional, Tuple
 import re
+import logging
 from .settings import settings
+
+logger = logging.getLogger(__name__)
 
 
 def convert_symbol_format(symbol: str, data_source: str, from_format: str = 'futu') -> str:
@@ -32,7 +35,7 @@ def convert_symbol_format(symbol: str, data_source: str, from_format: str = 'fut
             if success:
                 return futu_symbol
             else:
-                print(f"股票代码 {symbol} 转换为 Futu 格式失败,返回原格式")
+                logger.warning("股票代码 %s 转换为 Futu 格式失败,返回原格式", symbol)
                 return symbol
         else:
             raise ValueError(f"不支持的输入格式: {from_format}")
@@ -43,7 +46,7 @@ def convert_symbol_format(symbol: str, data_source: str, from_format: str = 'fut
             if success:
                 return yfinance_symbol
             else:
-                print(f"股票代码 {symbol} 转换为 yfinance 格式失败,返回原格式")
+                logger.warning("股票代码 %s 转换为 yfinance 格式失败,返回原格式", symbol)
                 return symbol
         elif from_format == 'yfinance':
             # yfinance数据源直接使用原格式
@@ -76,7 +79,7 @@ def convert_symbols_format(symbols: list, data_source: str, from_format: str = '
                 if success:
                     futu_symbols.append(futu_symbol)
                 else:
-                    print(f"股票代码 {symbol} 转换为 Futu 格式失败,返回原格式")
+                    logger.warning("股票代码 %s 转换为 Futu 格式失败,返回原格式", symbol)
                     return symbols
             return futu_symbols
         else:
@@ -90,7 +93,7 @@ def convert_symbols_format(symbols: list, data_source: str, from_format: str = '
                 if success:
                     yfinance_symbols.append(yfinance_symbol)
                 else:
-                    print(f"股票代码 {symbol} 转换为 yfinance 格式失败,返回原格式")
+                    logger.warning("股票代码 %s 转换为 yfinance 格式失败,返回原格式", symbol)
                     return symbols
             return yfinance_symbols
         elif from_format == 'yfinance':
@@ -117,7 +120,7 @@ def _Futu_to_yfinance_format(symbol: str) -> str:
         
     market_part, code_part = parts
     if market_part not in settings.data.Futu_yf_MarketMap:
-        print(f"{market_part}市场不在支持范围中")
+        logger.warning("%s 市场不在支持范围中", market_part)
         return False,symbol
     # 使用配置中的映射表进行转换
     yfinance_suffix = settings.data.Futu_yf_MarketMap[market_part]

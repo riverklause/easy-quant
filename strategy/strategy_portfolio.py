@@ -5,6 +5,9 @@
 
 from typing import Dict, List, Optional
 from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class StrategyPortfolio:
@@ -69,7 +72,7 @@ class StrategyPortfolio:
             self.global_strategies.append(strategy_id)
         
         self.updated_at = datetime.now()
-        print(f"[+] 策略 '{strategy_id}' 已添加到组合")
+        logger.info("策略 '%s' 已添加到组合", strategy_id)
     
     def get_strategies_for_stock(self, stock_symbol: str) -> List[str]:
         """
@@ -107,7 +110,7 @@ class StrategyPortfolio:
                 strategies.remove(strategy_id)
         
         self.updated_at = datetime.now()
-        print(f"[x] 策略 '{strategy_id}' 已从组合中移除")
+        logger.info("策略 '%s' 已从组合中移除", strategy_id)
     
     def get_portfolio_info(self) -> Dict:
         """
@@ -179,10 +182,10 @@ class StrategyPortfolio:
             if config['strategy_id'] == strategy_id:
                 config['params'].update(kwargs)
                 self.updated_at = datetime.now()
-                print(f"✅ 策略 '{strategy_id}' 参数已更新: {kwargs}")
+                logger.info("策略 '%s' 参数已更新: %s", strategy_id, kwargs)
                 return
         
-        print(f"[-] 未找到策略 '{strategy_id}'")
+        logger.warning("未找到策略 '%s'", strategy_id)
     
     def get_strategy_config(self, strategy_id: str) -> Optional[Dict]:
         """

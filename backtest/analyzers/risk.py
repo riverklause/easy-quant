@@ -4,8 +4,11 @@
 """
 
 from typing import Dict, Optional, List
+import logging
 import pandas as pd
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 class RiskAnalyzer:
@@ -241,11 +244,11 @@ class RiskAnalyzer:
             return vol_series
             
         except ImportError:
-            print("Warning: arch package not installed, using rolling volatility instead")
+            logger.warning("arch 未安装，回落滚动波动率")
             return self.calculate_rolling_volatility(returns)
-        except Exception as e:
-            print(f"GARCH model failed: {e}")
-            return pd.Series(dtype=float)
+        except Exception:
+            logger.exception("GARCH 模型失败")
+            return self.calculate_rolling_volatility(returns)
     
     def calculate_stress_tests(self, 
                               returns: pd.Series,
