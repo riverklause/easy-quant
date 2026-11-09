@@ -10,6 +10,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from data.storage.local_storage import LocalStorageManager, HISTORICAL_DIR_NAME
+from data.sources.adj_close import normalize_adj_close
 
 # 历史K线路径统一由 LocalStorageManager 决定：data/historical/{source}/{symbol}_{period}.parquet
 _storage = LocalStorageManager()
@@ -45,7 +46,8 @@ def load_kline_data(symbol, source='yfinance', period='daily'):
         HISTORICAL_DIR_NAME, symbol=symbol, source=source, period=period)
     if file_path.exists():
         try:
-            return pd.read_parquet(file_path)
+            # 旧文件 adj_close 用 0 占位：与 storage.load_data 同一套读时归一
+            return normalize_adj_close(pd.read_parquet(file_path))
         except Exception:
             pass
     return pd.DataFrame()

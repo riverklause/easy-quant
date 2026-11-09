@@ -67,6 +67,7 @@ def load_daily() -> dict[str, pd.DataFrame]:
         raise SystemExit(f"{DATA_DIR} 下没有 HK_*_daily.parquet")
     out = {}
     for p in files:
+        # 只取 close；旧文件 adj_close 用 0 占位，若要用它必须走 normalize_adj_close
         symbol, df = _normalize(pd.read_parquet(p), p.name)
         out[symbol] = df
     return out
