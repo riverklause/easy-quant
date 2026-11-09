@@ -111,3 +111,18 @@ def test_W6_corrupt_backtest_result_is_logged(tmp_path, caplog):
 
     assert df.empty
     assert "读取回测结果失败" in caplog.text
+
+def test_W7_name_lookup_prefers_full_market_list(monkeypatch, tmp_path):
+    """名称查全市场清单：只在 universe 外的代码也必须能显示。"""
+    from web.pages import control_stock
+
+    info = tmp_path / "StockBasicInfo.parquet"
+    filtered = tmp_path / "StockBasicFiltered.parquet"
+    pd.DataFrame({"code": ["HK.09988"], "name": ["阿里巴巴"]}).to_parquet(info, index=False)
+    pd.DataFrame({"code": ["HK.00700"], "name": ["腾讯"]}).to_parquet(filtered, index=False)
+
+    monkeypatch.setattr(control_stock, "STOCK_BASIC_INFO_FILE", info)
+    monkeypatch.setattr(control_stock, "STOCK_BASIC_FILTERED_FILE", filtered)
+
+    assert control_stock.show_stock_name("HK.09988") == "股票名称: 阿里巴巴"
+    assert control_stock.show_stock_name("HK.00700") == "股票名称: 腾讯"

@@ -46,20 +46,29 @@ def get_stock_list_display():
 
 
 def show_stock_name(stock_code):
-    """显示股票名称预览"""
-    if not stock_code or not STOCK_BASIC_FILTERED_FILE.exists():
+    """显示股票名称预览。
+
+    名称查全市场清单（StockBasicInfo）：待添加的代码可能不在 universe 里。
+    全量清单缺失时回退到 StockBasicFiltered。
+    """
+    if not stock_code:
         return ''
-    
+
     stock_code = stock_code.strip().upper()
-    
-    try:
-        filtered_df = pd.read_parquet(STOCK_BASIC_FILTERED_FILE)
-        match = filtered_df[filtered_df['code'].str.upper() == stock_code]
-        if not match.empty:
-            name = match.iloc[0].get('name', '')
-            return f'股票名称: {name}' if name else ''
-    except Exception:
-        logger.exception("读取股票列表失败: %s", STOCK_BASIC_FILTERED_FILE)
+
+    for source in (STOCK_BASIC_INFO_FILE, STOCK_BASIC_FILTERED_FILE):
+        if not source.exists():
+            continue
+        try:
+            df = pd.read_parquet(source)
+            match = df[df['code'].str.upper() == stock_code]
+            if not match.empty:
+                name = match.iloc[0].get('name', '')
+                if name:
+                    return f'股票名称: {name}'
+        except Exception:
+            logger.exception("读取股票列表失败: %s", source)
+
     return ''
 
 

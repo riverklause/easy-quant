@@ -479,6 +479,17 @@ git config core.hooksPath .githooks
 - **不入库**：`data/historical/`、`data/cache/`、`data/backtest/`、`data/logs/`（运行产物，体积不受控）；
 - **禁止入库**：`.env`、密钥、账户/持仓类文件（`.gitignore` 已按通配规则拦截；`.py` 模块不受影响）。
 
+### 四个股票清单文件
+
+| 文件 | 含义 | 谁维护 |
+|---|---|---|
+| `StockBasicInfo.parquet` | 市场全量股票与基本信息 | 页面「更新股票列表」写入 |
+| `StockBasicFiltered.parquet` | universe：粗过滤后的候选池（`get_basicfiltered_stocks()`） | 同上 |
+| `StockList.parquet` | 实际下载历史数据、订阅实时推送的清单 | 页面手动增删 |
+| `TradeList.parquet` | 可交易清单（**预留**，当前无代码引用） | — |
+
+数据流是单向的：全量 → universe → 下载/订阅清单 → 可交易清单。
+
 `adj_close` 的语义是"数据源提供的复权收盘价"：yfinance 给真值，futu 为 `NaN`
 （`autype=NONE` 不返回复权列）。**`0` 只出现在本次修复前落盘的 23 个旧文件里**
 （futu 3 个 + yfinance 20 个），表示"该列未被采集"，不是"复权价为零"。抓数脚本
