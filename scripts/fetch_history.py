@@ -91,31 +91,35 @@ def main() -> int:
     missing: list[str] = []
     failed_batches = 0
 
-    for idx in range(0, len(pending), args.batch_size):
-        batch = pending[idx : idx + args.batch_size]
-        try:
-            data = asyncio.run(
-                dm.get_batch_data(
-                    batch, args.source, args.start, args.end,
-                    adjusted=args.adjusted, period=args.period,
+    try:
+        for idx in range(0, len(pending), args.batch_size):
+            batch = pending[idx : idx + args.batch_size]
+            try:
+                data = asyncio.run(
+                    dm.get_batch_data(
+                        batch, args.source, args.start, args.end,
+                        adjusted=args.adjusted, period=args.period,
+                    )
                 )
-            )
-        except Exception:
-            failed_batches += 1
-            print(f"批次 {idx // args.batch_size + 1}: 失败（已跳过）")
-            continue
+            except Exception:
+                failed_batches += 1
+                print(f"批次 {idx // args.batch_size + 1}: 失败（已跳过）")
+                continue
 
-        for symbol, frame in data.items():
-            if storage.save_data(
-                frame, symbol,
-                data_type=f"historical_{args.period}",
-                source=args.source,
-            ):
-                fetched.append(symbol)
-        missing.extend(s for s in batch if s not in data)
+            for symbol, frame in data.items():
+                if storage.save_data(
+                    frame, symbol,
+                    data_type=f"historical_{args.period}",
+                    source=args.source,
+                ):
+                    fetched.append(symbol)
+            missing.extend(s for s in batch if s not in data)
 
-        print(f"批次 {idx // args.batch_size + 1}: 请求 {len(batch)} 成功 {len(data)}")
-        time.sleep(args.sleep)
+            print(f"批次 {idx // args.batch_size + 1}: 请求 {len(batch)} 成功 {len(data)}")
+            time.sleep(args.sleep)
+    finally:
+        # 不显式断开时，Futu SDK 的连接线程会让进程一直挂着（数据已落盘也不退出）
+        dm.disconnect_all()
 
     print(
         f"\n汇总：待抓 {len(pending)} | 落盘 {len(fetched)} | "
