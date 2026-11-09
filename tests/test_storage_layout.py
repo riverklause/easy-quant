@@ -80,3 +80,55 @@ def test_LS1_read_write_use_the_same_layout(tmp_path):
 
     assert loaded is not None
     assert list(loaded["close"]) == [1.0]
+
+
+def _write_legacy(symbol, source, adj_close, tmp_path):
+    """直接落盘一个旧格式文件（绕过 save_data），模拟历史遗留数据。"""
+    storage = _storage(tmp_path)
+    frame = pd.DataFrame(
+        {
+            "close": [10.0, 11.0],
+            "volume": [100, 200],
+            "adj_close": adj_close,
+        },
+        index=pd.DatetimeIndex(["2024-01-01", "2024-01-02"], name="time_key"),
+    )
+    path = storage.build_path(category="historical", symbol=symbol, source=source)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    frame.to_parquet(path)
+    return storage, path
+
+
+def test_LS4_load_turns_zero_adj_close_into_nan(tmp_path):
+    """旧文件用 0 占位：读出来必须是 NaN，不能把"未知"当成"复权价为零"。"""
+    storage, _ = _write_legacy("US.AAPL", "futu", [0, 0], tmp_path)
+
+    loaded = storage.load_data(
+        symbol="US.AAPL", data_type="historical_daily", source="futu"
+    )
+
+    assert loaded is not None
+    assert loaded["adj_close"].isna().all(), (
+        f"0 未归一：{loaded['adj_close'].tolist()}"
+    )
+    assert list(loaded["close"]) == [10.0, 11.0]
+
+
+def test_LS4b_normalization_is_read_only_and_keeps_real_values(tmp_path):
+    """归一化只作用于返回值：真值原样保留，磁盘文件不被改写。"""
+    # 真值（含单个 NaN）不得被动
+    storage, path = _write_legacy(
+        "US.AAPL", "yfinance", [9.5, float("nan")], tmp_path
+    )
+    loaded = storage.load_data(
+        symbol="US.AAPL", data_type="historical_daily", source="yfinance"
+    )
+    assert loaded["adj_close"].iloc[0] == 9.5
+    assert pd.isna(loaded["adj_close"].iloc[1])
+
+    # 旧文件读完后仍是 0：兜底在读时，不静默"修复"历史文件
+    storage, path = _write_legacy("US.MSFT", "futu", [0, 0], tmp_path)
+    storage.load_data(
+        symbol="US.MSFT", data_type="historical_daily", source="futu"
+    )
+    assert (pd.read_parquet(path)["adj_close"] == 0).all(), "磁盘文件被改写了"
