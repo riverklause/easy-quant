@@ -62,3 +62,25 @@ def test_W3_corrupt_stock_list_is_logged(monkeypatch, tmp_path, caplog):
 
     assert "暂无" in str(comp.children)
     assert "读取关注列表失败" in caplog.text
+
+
+def test_W4_load_kline_data_normalizes_legacy_adj_close(monkeypatch, tmp_path):
+    """K线页直接读 parquet，必须同样套用 adj_close 的 0→NaN 归一。"""
+    from web.pages import indicators
+
+    path = tmp_path / "US.AAPL_daily.parquet"
+    pd.DataFrame(
+        {"close": [10.0, 11.0], "volume": [100, 200], "adj_close": [0, 0]},
+        index=pd.DatetimeIndex(["2024-01-01", "2024-01-02"], name="time_key"),
+    ).to_parquet(path)
+
+    class _FakeStorage:
+        def build_path(self, *args, **kwargs):
+            return path
+
+    monkeypatch.setattr(indicators, "_storage", _FakeStorage())
+
+    got = indicators.load_kline_data("US.AAPL")
+
+    assert got["adj_close"].isna().all(), f"0 未归一：{got['adj_close'].tolist()}"
+    assert list(got["close"]) == [10.0, 11.0]
