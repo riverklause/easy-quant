@@ -29,7 +29,12 @@ class YFinanceClient(BaseDataSourceClient):
         
         # 在初始化时统一设置代理
         if self.proxy:
-            yf.set_config(proxy=self.proxy)
+            # yfinance >= 1.x 改用 yf.config.network.proxy，旧接口会告警
+            network = getattr(getattr(yf, "config", None), "network", None)
+            if network is not None:
+                network.proxy = self.proxy
+            else:
+                yf.set_config(proxy=self.proxy)
         
         # 设置数据源特性信息
         self.features = {

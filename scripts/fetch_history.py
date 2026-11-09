@@ -61,7 +61,6 @@ def main() -> int:
     p.add_argument("--limit", type=int, default=0, help="只处理前 N 只（0=全部）")
     p.add_argument("--batch-size", type=int, default=50)
     p.add_argument("--sleep", type=float, default=1.0, help="批次间隔秒")
-    p.add_argument("--adjusted", action="store_true")
     p.add_argument("--dry-run", action="store_true", help="只打印计划，不取数")
     args = p.parse_args()
 
@@ -98,7 +97,9 @@ def main() -> int:
                 data = asyncio.run(
                     dm.get_batch_data(
                         batch, args.source, args.start, args.end,
-                        adjusted=args.adjusted, period=args.period,
+                        # 存储层只存未复权价：adjusted=True 会让 close 静默变成复权价，
+                        # 而 adj_close 同时是 NaN，两列都不可信且不报错。
+                        adjusted=False, period=args.period,
                     )
                 )
             except Exception:
