@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, Any, Union
 from datetime import datetime, timedelta
 import logging
 from utils.settings import settings
+from ..sources.adj_close import normalize_adj_close
 
 # 设置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -349,6 +350,9 @@ class LocalStorageManager:
                 data = pd.read_csv(file_path, index_col=0, parse_dates=True)
             else:
                 raise ValueError(f"不支持的存储格式: {storage_format}")
+            
+            # 旧文件用 0 占位 adj_close：读时归一为 NaN，避免"未知"被当成"复权价为零"
+            data = normalize_adj_close(data)
             
             # 检查数据是否过期，过期的话返回None，但load_if_expired为True时无论数据是否过期都会加载数据
             if self._check_data_expiry(data, file_path, load_if_expired, max_age_hours, data_type, expiry_check_method):
