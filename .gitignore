@@ -41,3 +41,5 @@ data/**/*.pem
 
 # 调试输出
 /test_output.txt
+/pytest_last.txt
+scratch/
