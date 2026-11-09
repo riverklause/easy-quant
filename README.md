@@ -479,6 +479,11 @@ git config core.hooksPath .githooks
 - **不入库**：`data/historical/`、`data/cache/`、`data/backtest/`、`data/logs/`（运行产物，体积不受控）；
 - **禁止入库**：`.env`、密钥、账户/持仓类文件（`.gitignore` 已按通配规则拦截；`.py` 模块不受影响）。
 
+`adj_close` 的语义是"数据源提供的复权收盘价"：yfinance 给真值，futu 为 `NaN`
+（`autype=NONE` 不返回复权列）。**`0` 只出现在本次修复前落盘的 23 个旧文件里**
+（futu 3 个 + yfinance 20 个），表示"该列未被采集"，不是"复权价为零"。抓数脚本
+按"文件存在即跳过"续跑，因此这批文件在重抓前不会被覆盖——扩数据时先删掉它们。
+
 ## 许可证
 
 MIT License
