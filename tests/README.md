@@ -76,12 +76,22 @@
 | FL9 | `rank_ic` 的秩在**成对支撑集**上取（A 全支撑 [1..6]、B 只 3 只且反向 → 必须是 −1.0） | `paired_rank_corr` 去掉 `.where(mask)` → FL9/FL9b 红（回到 −0.9934），其余 105 绿 | ✓ |
 | FL9b | `factor_correlation` 与 `rank_ic` 共用**同一份**实现，不是各自恰好算对 | `_cross_section_rank_corr` 改回自己取秩 → **只有 FL9b 红**、FL9 绿 | ✓ |
 | FL10 | `ACTIVE` 剪枝名单非空、无重复、每个名字都在 `__all__` 里 | —（保护性灯：名单本身是数据，没有对应可回退的实现） | ✓ |
+| CL1–CL3 | 缓存键是字符串拼接：`"sma_5"` 子串命中 `"sma_50"`；注销与按指标清理用 `endswith` 永不命中 | 回退键元组化 → CL1 拿到 SMA50 末值（`13.45 != 15.7`），CL2 残留 `sma_5` 条目，CL3 `"sma_5" not in keys_after` 失败 | ✓ |
+| SM1–SM9 | 策略层：初始化失败仍留运行态、manager 运行态是独立字段、`start` 先置位再 `initialize`（参数被覆盖）、`stop_all` 被自身状态挡住、路由用 `set` 打乱顺序 | 回退 initialize 置位顺序 → **只有 SM8 红**（`is_running is False` 得到 True）；回退 manager 派生属性 → **只有 SM9 红**（`True != False`）；回退 `stop_all` 守卫 → SM6 红（`stop_calls == 0`）；SM1–SM4 / SM7 为保护性灯 | ✓ |
+| FP0–FP5 | 复权：因子表返回 `(bool, DataFrame)`、非法 `adjust_type` 静默走后复权、选因子依赖表的行序（取错日 / 前视） | 回退 `get_rehab_factors` 返回值 → FP0 `isinstance(got, pd.DataFrame)` 失败；删掉枚举校验 → FP4 四个参数全 `DID NOT RAISE`；去掉 `sort_index` → FP5 `descending` 得 `11.0 != 12.0`、`target=None` 得 `11.0 != 13.0`；FP1–FP3 为保护性灯 | ✓ |
+| DM1–DM4 | 体检返回 coroutine（恒为真）、配置校验 `all(...)` 漏检单字段、批量取数静默丢标的、结果顺序随 client | 回退 `async def health_check` → DM1 报 `a coroutine was expected`；回退逐项校验 → DM2 `DID NOT RAISE ImportError`（期望指向 `Futu_TrdEnv`）；回退缺失告警 → DM4a 日志里没有 `HK.00763`；回退按输入顺序组装 → DM4b `[...] != REQUESTED` | ✓ |
+| SCT1–SCT7 | 技术条件：MACD 两条件用 `EMA(span=...)` 拼错、从未生效；其余条件的触发/不触发方向 | 回退 `macd.py` 到 `EMA(span=)` → SCT1 抛 `TypeError: unexpected keyword argument 'span'`；SCT1b–SCT7 为保护性灯（正反样本交叉断言） | ✓ |
+| W1–W4 | 页面辅助：关注列表缺失/损坏被裸 `except: pass` 静默、筛选配置往返、K线页旁路 `adj_close` 归一 | 回退 W3 的 `logger.exception` → 无 `读取关注列表失败` 日志；回退 `load_kline_data` 的 `normalize_adj_close` → W4 红（`0 未归一：[0, 0]`）；W1 / W2 为保护性灯 | ✓ |
+| DOC1 / DP1 | 已移除符号（`OrderExecutor` / `loguru` / `FastAPI` 等）在 README、docs 回潮；`requirements.txt` 与 `pyproject` 依赖漂移 | 保护性灯（加灯时即绿）：命中时分别报「仍提到已移除的 X」与「仅 pyproject 有 / 仅 requirements 有」差集 | ✓ |
+| ADJ0–ADJ3 / NET1 | `adj_close` 语义：yfinance 源真值被覆盖成 0、缺列补 0（应补 NaN）、helper 就地改入参；NET1 校验 Yahoo 真值确实不同于 close | 回退 `with_adj_close` → ADJ0 得 `[0, 0, 0]`、ADJ2 `isna().all()` 失败、ADJ3 `"adj_close" not in df.columns` 失败；回退成无条件 `= 0` → ADJ1 的 `9.5` 被抹掉；NET1 需 `NET_TESTS=1` 才跑 | ✓ |
 
 R1 之后，L4b / L4b2 的绿依赖 L4c 的声明式装配；本表记录的是各自独立修复时的回退结果。
 
 ### 已知缺口
 
-- 无（`date_utils` 的 `holidays` 依赖已落地）。
+- 无测试依赖缺口（`date_utils` 的 `holidays` 已落地）。
+- 覆盖缺口（未测 ≠ 干净）：`data_manager` 的 `get_market_snapshot`、财报接口、实时回调，
+  以及 `web/` 的 Dash 回调层都没有灯；`futu` 的真实网络路径只有 NET1 一条（需 `NET_TESTS=1`）。
 
 运行：
 
