@@ -9,6 +9,7 @@ import yfinance as yf
 import logging
 
 from ..base_client import BaseDataSourceClient
+from .adj_close import with_adj_close
 
 logger = logging.getLogger(__name__)
 
@@ -211,7 +212,7 @@ class YFinanceClient(BaseDataSourceClient):
             batch_data = batch_data.stack(level=0, future_stack=True) # 转换为多级索引
             batch_data.index.names = ['time_key', 'code']
             result = self._process_dataframe(batch_data)
-            result['adj_close'] = 0
+            result = with_adj_close(result)      # 源给的 Adj Close 是真值，不能抹掉
             return result[['open', 'high', 'low', 'close', 'volume', 'adj_close']]
             
         except Exception as e:

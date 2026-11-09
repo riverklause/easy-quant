@@ -11,6 +11,7 @@ import pandas as pd
 import futu as ft
 from futu import Market, SecurityType, SimpleFilter, AccumulateFilter, StockField, SortDir, RET_OK
 from ..base_client import BaseDataSourceClient
+from .adj_close import with_adj_close
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -183,7 +184,7 @@ class FutuAPIClient(BaseDataSourceClient):
                 
                 # 设置多级索引(time_key, code)
                 df.set_index(['time_key', 'code'], inplace=True)
-                df['adj_close'] = 0
+                df = with_adj_close(df)          # autype=NONE 没有复权列 → NaN
                 return df[['open', 'high', 'low', 'close', 'volume', 'adj_close']]
             else:
                 raise Exception(f"Futu获取历史数据失败: {data}")
