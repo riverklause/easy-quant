@@ -3,10 +3,13 @@
 分析交易记录，生成交易统计信息
 """
 
+import logging
 from typing import Dict, List, Optional
 from datetime import datetime
 import pandas as pd
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 class TradeAnalyzer:
@@ -149,7 +152,8 @@ class TradeAnalyzer:
                 'max_holding_days': trades_copy['holding_days'].max(),
                 'min_holding_days': trades_copy['holding_days'].min(),
             }
-        except:
+        except (KeyError, TypeError, AttributeError, ValueError) as e:
+            logger.warning("计算持仓时间失败: %s", e)
             return {'average_holding_days': 0}
     
     def _calculate_trade_frequency(self, trades: pd.DataFrame) -> Dict:
@@ -176,7 +180,8 @@ class TradeAnalyzer:
                 'trades_per_month': trades_per_month,
                 'trades_per_year': trades_per_month * 12,
             }
-        except:
+        except (KeyError, TypeError, AttributeError, ValueError) as e:
+            logger.warning("计算交易频率失败: %s", e)
             return {'trades_per_month': 0}
     
     def analyze_by_symbol(self, trades: pd.DataFrame) -> Dict[str, Dict]:
@@ -269,7 +274,8 @@ class TradeAnalyzer:
             
             return monthly
             
-        except:
+        except (KeyError, TypeError, AttributeError, ValueError) as e:
+            logger.warning("计算月度交易失败: %s", e)
             return pd.DataFrame()
     
     def calculate_consecutive_wins_losses(self, trades: pd.DataFrame) -> Dict:

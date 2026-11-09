@@ -84,3 +84,30 @@ def test_W4_load_kline_data_normalizes_legacy_adj_close(monkeypatch, tmp_path):
 
     assert got["adj_close"].isna().all(), f"0 未归一：{got['adj_close'].tolist()}"
     assert list(got["close"]) == [10.0, 11.0]
+
+def test_W5_corrupt_screener_result_is_logged(tmp_path, caplog):
+    """坏 parquet 不能静默返回空表：必须留一条错误日志。"""
+    from web.pages import screener
+
+    path = tmp_path / "bad.parquet"
+    path.write_bytes(b"not a parquet")
+
+    with caplog.at_level(logging.ERROR, logger="web.pages.screener"):
+        df = screener.load_screener_result(path)
+
+    assert df.empty
+    assert "读取选股结果失败" in caplog.text
+
+
+def test_W6_corrupt_backtest_result_is_logged(tmp_path, caplog):
+    """回测结果同理：空表可以返回，但不能无声。"""
+    from web.pages import performance
+
+    path = tmp_path / "bad.parquet"
+    path.write_bytes(b"not a parquet")
+
+    with caplog.at_level(logging.ERROR, logger="web.pages.performance"):
+        df = performance.load_backtest_result(path)
+
+    assert df.empty
+    assert "读取回测结果失败" in caplog.text

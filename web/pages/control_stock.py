@@ -58,8 +58,8 @@ def show_stock_name(stock_code):
         if not match.empty:
             name = match.iloc[0].get('name', '')
             return f'股票名称: {name}' if name else ''
-    except:
-        pass
+    except Exception:
+        logger.exception("读取股票列表失败: %s", STOCK_BASIC_FILTERED_FILE)
     return ''
 
 

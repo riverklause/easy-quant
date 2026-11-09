@@ -3,6 +3,8 @@
 回测结果展示
 """
 
+import logging
+
 from dash import html, dcc, callback, Input, Output, State
 import dash_bootstrap_components as dbc
 import pandas as pd
@@ -12,6 +14,7 @@ from data.storage.local_storage import LocalStorageManager, BACKTEST_DIR_NAME
 
 # 回测结果路径统一由 LocalStorageManager 决定：data/backtest/{source}/...
 _storage = LocalStorageManager()
+logger = logging.getLogger(__name__)
 
 
 def get_backtest_results():
@@ -29,9 +32,9 @@ def get_backtest_results():
 def load_backtest_result(path):
     """加载回测结果"""
     try:
-        df = pd.read_parquet(path)
-        return df
-    except:
+        return pd.read_parquet(path)
+    except Exception:
+        logger.exception("读取回测结果失败: %s", path)
         return pd.DataFrame()
 
 

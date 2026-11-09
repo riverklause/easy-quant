@@ -243,7 +243,7 @@ class LocalStorageManager:
                             # 如果是字符串，尝试转换为datetime
                             try:
                                 return pd.to_datetime(last_time_value)
-                            except:
+                            except (ValueError, TypeError):
                                 return None
                         return last_time_value
                     return None
