@@ -1,10 +1,12 @@
-"""DM1-DM3：DataManager 的健康检查、配置校验与数据源路由。
+"""DM1-DM4：DataManager 的健康检查、配置校验、数据源路由与批量取数。
 
 全部离线：clients 为空或替换为桩，不触发任何网络/OpenD。
 """
 
 import asyncio
+import logging
 
+import pandas as pd
 import pytest
 
 from data.data_manager import DataManager
@@ -61,3 +63,56 @@ def test_DM3_unknown_data_source_rejected():
                 "HK.00700", "2024-01-01", "2024-01-31", "nope"
             )
         )
+
+
+# ===== DM4：批量取数的映射、顺序与缺失可见性 =====
+
+
+def _frame():
+    idx = pd.bdate_range("2024-01-01", periods=3)
+    return pd.DataFrame({"close": [1.0, 2.0, 3.0]}, index=idx)
+
+
+def _batch_manager(respond):
+    """只注入 get_batch_data 路径需要的部分，避免构造出真实存储目录。"""
+    dm = DataManager.__new__(DataManager)
+    dm.config = _minimal_config()
+
+    class _Client:
+        def validate_date_range(self, start, end):
+            return True
+
+        async def get_batch_data(self, symbols, *args, **kwargs):
+            return respond(symbols)
+
+    dm.clients = {"futu": _Client()}
+    return dm
+
+
+REQUESTED = ["HK.00700", "HK.00763", "HK.00981"]
+
+
+def test_DM4a_missing_symbols_are_reported(caplog):
+    """请求 3 只、client 只回 2 只：结果按原始代码返回，且缺失必须留痕。"""
+    dm = _batch_manager(lambda s: {s[0]: _frame(), s[2]: _frame()})
+
+    with caplog.at_level(logging.WARNING, logger="data.data_manager"):
+        got = asyncio.run(
+            dm.get_batch_data(REQUESTED, "futu", "2024-01-01", "2024-01-31")
+        )
+
+    assert list(got) == ["HK.00700", "HK.00981"]
+    assert "HK.00763" in caplog.text, "缺失标的必须出现在日志里"
+
+
+def test_DM4b_result_follows_request_order():
+    """结果顺序 = 输入顺序；client 的返回顺序不应影响输出。"""
+    dm = _batch_manager(
+        lambda s: {s[2]: _frame(), s[0]: _frame(), s[1]: _frame()}
+    )
+
+    got = asyncio.run(
+        dm.get_batch_data(REQUESTED, "futu", "2024-01-01", "2024-01-31")
+    )
+
+    assert list(got) == REQUESTED
