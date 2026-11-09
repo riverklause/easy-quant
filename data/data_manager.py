@@ -324,49 +324,39 @@ class DataManager:
         if not client.validate_date_range(start_date, end_date):
             raise Exception(f"日期范围无效: {start_date} 到 {end_date}")
         
-        # 从数据源获取批量数据
-        result = {}
-        
-        # 创建转换映射
-        symbol_map = {converted: original for converted, original in zip(converted_symbols, symbols)}
-        
         # 调用客户端的批量获取方法
         fetched_data = await client.get_batch_data(converted_symbols, start_date, end_date, adjusted, period)
-        
-        # 处理返回的数据，根据客户端返回的格式不同进行不同处理
+
+        # 三个分支都只把结果写进 pool（键 = 转换后的代码）；
+        # 映射回原始代码、保持输入顺序、统计缺失，统一在最后做一次。
+        pool: Dict[str, pd.DataFrame] = {}
+
         if isinstance(fetched_data, dict):
-            # 如果返回的是字典格式，需要将转换后的代码映射回原始代码
-            for converted_symbol, data in fetched_data.items():
-                if converted_symbol in symbol_map:
-                    original_symbol = symbol_map[converted_symbol]
-                    result[original_symbol] = data
+            pool.update(fetched_data)
         elif isinstance(fetched_data, pd.DataFrame) and not fetched_data.empty:
-            # 如果返回的是DataFrame格式，需要按股票代码分组处理
-            # 检查是否有code列或多级索引
             if 'code' in fetched_data.columns:
-                # 如果code是列，按code分组
                 for converted_symbol, group in fetched_data.groupby('code'):
-                    if converted_symbol in symbol_map:
-                        original_symbol = symbol_map[converted_symbol]
-                        # 移除code列并设置时间索引
-                        data = group.drop(columns=['code']).set_index('time_key')
-                        result[original_symbol] = data
+                    pool[converted_symbol] = (
+                        group.drop(columns=['code']).set_index('time_key')
+                    )
             elif 'code' in fetched_data.index.names:
-                # 如果code是索引的一部分，按code索引级别分组
-                # 获取所有唯一的转换后股票代码
-                unique_converted_symbols = fetched_data.index.get_level_values('code').unique()
-                for converted_symbol in unique_converted_symbols:
-                    if converted_symbol in symbol_map:
-                        original_symbol = symbol_map[converted_symbol]
-                        try:
-                            # 尝试获取该股票的数据
-                            data = fetched_data.xs(converted_symbol, level='code', drop_level=False)
-                            if not data.empty:
-                                result[original_symbol] = data
-                        except KeyError:
-                            # 该股票数据不存在，跳过
-                            continue
-        
+                for converted_symbol in fetched_data.index.get_level_values('code').unique():
+                    data = fetched_data.xs(converted_symbol, level='code', drop_level=False)
+                    if not data.empty:
+                        pool[converted_symbol] = data
+
+        result: Dict[str, pd.DataFrame] = {}
+        for original_symbol, converted_symbol in zip(symbols, converted_symbols):
+            if converted_symbol in pool:
+                result[original_symbol] = pool[converted_symbol]
+
+        missing = [o for o, c in zip(symbols, converted_symbols) if c not in pool]
+        if missing:
+            logger.warning(
+                "批量取数缺少 %d/%d 个标的: %s",
+                len(missing), len(symbols), missing[:10],
+            )
+
         return result
     
     # 数据源必须明确指定
