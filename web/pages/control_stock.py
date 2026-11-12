@@ -108,6 +108,8 @@ def save_or_cancel_stock(n_save_clicks, n_cancel_clicks, stock_code):
         
         stock_code = stock_code.strip().upper()
         
+        # 规则：StockList 只能从 universe（StockBasicFiltered）里挑，
+        # 不允许手动加入候选池之外的代码。
         if not STOCK_BASIC_FILTERED_FILE.exists():
             return get_stock_list_display(), dbc.Alert('过滤股票列表文件不存在，请先更新股票列表', color='danger'), '', ''
         
