@@ -70,7 +70,7 @@
 - 日期型入参（`date` / `YYYY-MM-DD` 字符串 / **naive** 零点 `Timestamp`）：视为**市场本地日期**，不做时区换算；tz-aware 的零点 `Timestamp` 不算日期，一律按时刻换算；
 - 带时分秒的 `datetime`：必须 tz-aware，直接换算到市场时区；
 - **拒绝 naive 的带时分秒输入**（如 `datetime.now()`）：抛 `ValueError`。naive 一律按市场本地时间解释会埋雷——上海时间直接传给 US 会整体偏一天；
-- `is_trading_time` / `session_date` 只接受 tz-aware 时间，不接受 naive `datetime`；
+- `is_trading_time` 只接受 tz-aware 时刻，不接受 naive `datetime`；`session_date` 接受上面的日期型入参或 tz-aware 时刻，按上述规则换算；
 - 对外返回的日期统一为 naive 的 session date（`datetime64[ns]`，零点），不带时区；时区换算只在边界层完成。
 
 示例：上海 11-13 08:00，纽约为 11-12 19:00，美股 session date 是 11-12，不是 11-13。需要「下一个 session」时，对 session date 调用 `next_trading_day`，不要直接拿上海日期查。
@@ -88,7 +88,7 @@
 非交易日不写入数据表，但「不在表中」只有在**已覆盖区间内**才等价于休市：
 
 - `is_trading_day(day)` / `get_session_type(day)` / `get_trading_days` / `get_calendar_frame` / `next_trading_day` / `previous_trading_day`：先确保请求区间落在 `covered_intervals` 内（必要时按 §6/§7 补拉）；补拉后仍无覆盖时——窗口外抛 `CalendarOutOfRange`，窗口内取数失败抛 `CalendarUnavailable`。
-- **未覆盖绝不能当成休市**；周六/周日是结构性休市，无需覆盖（见 §7.3）；`get_session_type` 返回 `None` 只表示「已覆盖的休市日」。
+- **未覆盖绝不能当成休市**；周六/周日是结构性休市，无需覆盖（见 §7.3）；`get_session_type` 返回 `None` 表示「已覆盖的休市日」或「结构性周末」。
 - 读接口不得返回部分结果：请求区间缺一段就报错并列出缺失区间，不做静默截断。唯一例外是未来侧越界，按 §6.4 夹取到 12/31 并 WARNING。
 
 ### 4.3 交易时段
@@ -188,6 +188,7 @@ data/cache/trading_calendar/
     {"start": "2016-11-13", "end": "2016-12-31", "fetched_at": "2026-11-16T10:00:00+08:00"},
     {"start": "2017-01-01", "end": "2025-12-31", "fetched_at": "2026-11-16T10:00:00+08:00"}
   ],
+  "future_probe_at": null,
   "source": "futu",
   "row_count": 2400,
   "parquet_sha256": "..."
@@ -195,6 +196,9 @@ data/cache/trading_calendar/
 ```
 
 - `covered_intervals` 是并集后的闭区间列表，每段带自己的 `fetched_at`，用于判断「请求区间是否已覆盖」与「今年那段区间是否过 TTL」；不使用单一市场级时间戳。
+- 相邻区间仅当 `fetched_at` 相同才可合并为一段；不同则保持分段。「并集」只作用于同一次写入的段，跨次写入不得因相邻就合并，避免历史补拉改变当年的 TTL。
+- `future_probe_at`：最近一次确认「未来日历尚未发布」的探测时间（ISO 8601，无则 `null`）；TTL 内未来查询直接快速失败，不发请求。
+- `schema_version`：meta 结构变更时递增；当前为 1（尚未实现，无历史包袱）。
 - `parquet_sha256` 用于读路径校验 parquet 与 meta 是否配套。
 - 备份数据、override 数据都不写入这里。
 
@@ -208,8 +212,15 @@ data/cache/trading_calendar/
 
 - 只有 futu 返回的数据能写盘。
 - 断网/失败时如果已有缓存且请求区间被完整覆盖，读缓存并 WARNING，`cache_stale=true`；否则抛错。
-- 当前年请求若 `end > today` 但返回结果没有任何晚于 `today` 的日期：视为未来日历尚未发布，WARNING，并把 coverage 收敛到「最后一个已返回日期」，不得向后扩到 `today`，也不得缩小已确认的 coverage。后续超出该日期的查询：工作日抛 `CalendarFutureUnavailable`，不得当成休市。
-- 周六/周日是结构性休市，无需覆盖即可由 `is_trading_day` 返回 `False`；工作日不能这样推断，缺覆盖一律抛 `CalendarFutureUnavailable`。
+- 当前年请求 `end > today` 时，按返回内容分两种情况：
+  - **未发布**：返回不含任何晚于 `today` 的日期 → futu 未来日历尚未发布，WARNING；coverage 右端记到 max(已确认右端, 最后一个返回日期)，**不扩到 `today`**；已确认的 coverage 永不缩小，收敛只作用于尚未确认的尾部；同时记录 `future_probe_at`。后续查询超出 coverage：工作日抛 `CalendarFutureUnavailable`，不得当成休市；周六/周日仍返回 `False`。
+  - **已发布（接口契约信任）**：返回含至少一个晚于 `today` 的日期 → 视为 futu 对 `[start, min(end, 今年 12/31)]` 已完整发布，coverage 右端记到 max(已确认右端, min(end, 12/31))；该区间内不在表中的日期即休市。此假设的风险见 §15；不做启发式截断（长假附近易误判）。
+- 周六/周日是结构性休市，无需覆盖即可由 `is_trading_day` 返回 `False`；工作日缺覆盖按方向报错：未来侧抛 `CalendarFutureUnavailable`，历史侧（早于 10 年窗口且无缓存）抛 `CalendarOutOfRange`，窗口内空洞补拉失败抛 `CalendarUnavailable`。
+- 未来不可用负缓存：`future_probe_at` 起 `future_probe_ttl` 内（默认 12 小时，可配）再查询未来工作日直接抛 `CalendarFutureUnavailable`，不发请求——`is_trading_day` / `get_session_type` 的单日查询、`get_trading_days` / `get_calendar_frame` 的未来区间、`next_trading_day` 跨年，全部受它约束；`refresh=True` 或 TTL 过期后重新探测。避免 12 月末每次调度都打 futu。
+- `future_probe_at` 只在同一自然年内有效：跨年后视为失效并清空，避免 12/31 的探测压住 1/1 的新日历；**已发布分支成功、`refresh=True`、`prewarm` 成功时都必须清空**。
+- 查询顺序固定：先判 coverage（完整覆盖且未过 TTL → 直接用缓存）→ 再判负缓存 → 最后才回源。
+- futu 返回空（一条数据都没有）：只写 `future_probe_at`，不创建任何 `covered_intervals`；禁止写入 `start > end` 的零长度区间。
+- coverage 写入不变量：按 `start` 排序、互不重叠；已发布分支扩右端时必须裁剪或替换旧段；相邻区间仅 `fetched_at` 相同才合并。
 - 缓存损坏（读失败、缺列、sha 不匹配）：WARNING 后重新请求。
 - `fetched_at` 按区间记录：只有覆盖今年那一段的 `fetched_at` 参与 TTL，补拉历史区间不会刷新当年的新鲜度。
 
@@ -247,9 +258,9 @@ get_trading_days(market: str, start: str | None = None, end: str | None = None,
 ```text
 get_trading_days(market, start=None, end=None, refresh=False) -> DatetimeIndex
 get_calendar_frame(market, start=None, end=None, refresh=False) -> DataFrame
-is_trading_day(day, market) -> bool
-get_session_type(day, market) -> str | None
-is_trading_time(dt, market) -> bool          # dt 必须 tz-aware
+is_trading_day(day, market, refresh=False) -> bool
+get_session_type(day, market, refresh=False) -> str | None
+is_trading_time(dt, market, refresh=False) -> bool   # dt 必须 tz-aware
 next_trading_day(day, market) -> Timestamp
 previous_trading_day(day, market) -> Timestamp
 refresh(market, start=None, end=None) -> DatetimeIndex
@@ -259,11 +270,12 @@ prewarm(market, start, end) -> None
 默认区间与语义：
 
 - `get_trading_days(start=None, end=None)`：`end` 缺省取 `session_date(market, now)`，`start` 缺省取 `end - 365 天`；
+- `get_trading_days` / `get_calendar_frame`：请求区间全为周六/周日（如周六到周日）→ 直接返回空结果，不触发请求与补拉；
 - `next_trading_day(day)` / `previous_trading_day(day)`：严格不含 `day`；
 - `refresh(market, start, end)`：绕过缓存与 TTL，强制回源，仍受窗口与限流约束；
 - `prewarm(market, start, end)`：绕过 TTL 与缓存，只回源与写缓存，返回 `None`，用于开盘前/历史区间预热；次年区间需 1 月 1 日后再预热。
 
-构造参数：`client`、`cache_dir`、`refresh_ttl`（默认 12 小时）、`now_provider`（测试注入时钟）。
+构造参数：`client`、`cache_dir`、`refresh_ttl`（默认 12 小时）、`future_probe_ttl`（默认 12 小时）、`now_provider`（测试注入时钟）。
 `last_source` 暴露最近一次取数的来源（`futu` / `cache` / `None`）；
 `cache_stale` 表示本次是否回退了过期/旧缓存；`last_fetched_at` 暴露对应区间的取数时间。
 
@@ -272,8 +284,8 @@ prewarm(market, start, end) -> None
 | 异常 | 含义 |
 |---|---|
 | `CalendarUnavailable` | futu 不可用且缓存无法完整覆盖（含窗口内的覆盖空洞） |
-| `CalendarOutOfRange` | 日期早于 10 年窗口且无缓存；含 `previous_trading_day` 越界；未覆盖区间不得当作休市 |
-| `CalendarFutureUnavailable` | 整段请求超出今年 12/31，或 `next_trading_day` 结果跨年；部分越界只夹取 + WARNING |
+| `CalendarOutOfRange` | 工作日早于 10 年窗口且无缓存（周六/周日按结构性休市返回 `False`，不抛此异常）；含 `previous_trading_day` 越界；未覆盖区间不得当作休市 |
+| `CalendarFutureUnavailable` | 整段请求超出今年 12/31、未来侧未覆盖（工作日）、负缓存命中，或 `next_trading_day` 结果跨年；部分越界只夹取 + WARNING |
 | `CalendarRateLimited` | 退避重试后仍被限流 |
 
 另有 `ValueError`：带时分秒的 naive `datetime` 入参（见 §4.1）。
@@ -370,15 +382,18 @@ OpenD 可用时，用下列日期查一次 `trade_date_type`：
 | CAL-16 | 引擎过滤：逐标的剔除、计数、混合市场、日历缺失时失败 |
 | CAL-17 | 已知日期 fixture：2024 港股休市日集合（放 `tests/fixtures/`，仅测试用，不参与运行时兜底） |
 | CAL-18 | 缓存写锁：并发写入不丢 coverage |
-| CAL-19 | 未覆盖区间：`is_trading_day` / `get_session_type` 必须抛异常，不得返回 `False` / `None` |
+| CAL-19 | 未覆盖区间：`is_trading_day` / `get_session_type` 必须抛异常，不得返回 `False` / `None`；周六/周日结构性休市例外（可返回 `False` / `None`） |
 | CAL-20 | 部分越界：历史侧缺缓存抛错，未来侧夹到 12/31 且 WARNING |
 | CAL-21 | futu 失败但缓存完整覆盖 → 返回缓存，`cache_stale=true`，WARNING |
-| CAL-22 | 当年请求无未来日期 → coverage 收敛到最后一个已返回日期；之后的工作日抛 `CalendarFutureUnavailable`（不返回 `False`），周六/周日仍返回 `False` |
+| CAL-22 | 当年请求无未来日期（未发布分支）→ 未被已确认覆盖的尾部收敛到最后一个已返回日期，已确认区间永不缩小；之后的工作日抛 `CalendarFutureUnavailable`（不返回 `False`），周六/周日仍返回 `False` |
 | CAL-23 | `previous_trading_day` 早于 10 年窗口 → `CalendarOutOfRange` |
 | CAL-24 | 混合区间（历史缺缓存 + 未来越界）→ 历史侧错误优先 |
 | CAL-25 | naive 带时分秒时间入参 → `ValueError`；tz-aware 零点 `Timestamp` 按时刻换算，不当成日期 |
 | CAL-26 | override 格式错误/重复/非交易日 → 忽略 + WARNING；`close_time` 按 `session_type` 对应 segment 校验（HK `MORNING` 的 11:30 合法） |
 | CAL-27 | 真实数据路径日历不可用 → 抛错，绝不回落到工作日；仅 mock 允许 |
+| CAL-28 | 已发布分支：返回含未来日期 → coverage 记到 max(已确认右端, min(end, 12/31))，尾部缺失按休市；未发布分支：收敛到最后一个返回日期 |
+| CAL-29 | 未来负缓存：`future_probe_at` TTL 内重复查询未来工作日不再请求 futu，直接抛 `CalendarFutureUnavailable`；`refresh=True` 或 TTL 过期后重新探测 |
+| CAL-30 | 纯周末区间（周六至周日）→ 返回空结果，不触发请求 |
 
 ## 13. 实施阶段
 
@@ -386,7 +401,7 @@ OpenD 可用时，用下列日期查一次 `trade_date_type`：
 
 - `FutuAPIClient.get_trading_days`；
 - `TradingCalendar`、缓存、coverage、限流、异常；
-- CAL-01～CAL-27 中与能力层相关的测试；
+- CAL-01～CAL-30 中与能力层相关的测试；
 - CN 本阶段只提供日历能力，不接 A 股行情与标的解析。
 
 验收：不改任何现有调用；单测全绿。
@@ -414,7 +429,7 @@ OpenD 可用时，用下列日期查一次 `trade_date_type`：
 ## 14. 运维约束
 
 1. **缓存是唯一离线档案。** 10 年窗口外的历史日历一旦缓存丢失就无法重建；`data/cache/trading_calendar/` 必须纳入日常备份。override 文件在版本库中，随代码备份。
-2. **次年日历只能等 1 月 1 日后再取。** futu 不返回次年数据，12 月无法预热；12 月末调用跨年的 `next_trading_day` 会抛 `CalendarFutureUnavailable`，属预期行为，调度需容错并顺延到次年 1 月 1 日后重试。
+2. **次年日历只能等 1 月 1 日后再取。** futu 不返回次年数据，12 月无法预热；12 月末调用跨年的 `next_trading_day` 会抛 `CalendarFutureUnavailable`，属预期行为，调度需容错并顺延到次年 1 月 1 日后重试；`future_probe_at` 负缓存（§7.3）可避免每次调度都打 futu。
 3. **不要同时跑两个首次全量回填。** 不做跨进程限流，两个进程会叠加请求数；Web 启动预热一次，回测复用缓存。
 4. **OpenD 必须在线才能补新数据。** 离线时只能读缓存；没有缓存就失败，这是设计意图。
 5. **临时休市要手动刷新。** 台风/黑雨、临时休市可能盘中才公告；当年缓存 12 小时 TTL 不够及时，实时判断建议开盘前 `refresh` 或使用更短 TTL。futu 是否更新这类日历需实测。
@@ -425,12 +440,13 @@ OpenD 可用时，用下列日期查一次 `trade_date_type`：
 |---|---|---|
 | 限流按账号还是连接 | 假设 30/30s 按 OpenD 账号计 | 首次回填单进程执行；必要时再补文件锁 |
 | 美股提前收市表达 | futu 可能只返回 `WHOLE` | 用 override 补 `close_time`；上线前实测 |
-| 10 年窗口边界 | 「过去 10 年」按滚动日期还是自然年由 futu 决定 | 请求前按滚动 `today - 10 年` 夹取；以 futu 返回为准 |
+| 10 年窗口边界 | 「过去 10 年」按滚动日期还是自然年由 futu 决定 | 请求前按滚动 `today - 10 年` 校验；以 futu 返回为准 |
 | CN 覆盖范围 | 仅 SH/SZ；不含北交所 | 标的解析层同步限制 |
 | 缓存损坏/丢失 | 老数据不可重建 | 备份 + sha 校验 + 损坏重建 |
 | 时区/DST | 美股 EST/EDT 切换 | 使用 `America/New_York`，不写死 UTC 偏移 |
 | naive 时间入参 | 调用方把上海 `now()` 直接传给 US | 带时分秒强制 tz-aware；naive 抛 `ValueError` |
-| 未来日历不完整 | futu 未返回 12/31 前的全部日期 | coverage 收敛 + `CalendarFutureUnavailable`，不把未来当休市 |
+| 未来日历未发布 | futu 未返回任何晚于 `today` 的日期（未发布分支） | coverage 尾部收敛 + `future_probe_at` 负缓存；未来工作日抛 `CalendarFutureUnavailable`，不把未来当休市（D20） |
+| 未来日历部分缺失 | futu 返回含未来日期但未到 12/31（已发布分支） | 接口契约信任：coverage 记到 `min(end, 12/31)`，尾部缺失按休市（D23） |
 | 过期缓存 | futu 失败时回退旧缓存 | `cache_stale=true` + WARNING，回测结果留痕 |
 | 新机器无 OpenD | `data/cache/` 不入库，且无网络时拿不到任何日历 | 用 CAL-17 fixture 跑测试回归；生产机首次使用仍需在线预拉并备份缓存 |
 | 12 月末跨年 | 次年日历未发布，任何向未来跨年的推算都会失败 | 属预期行为，见 §14.2；调用方需容错 |
@@ -452,11 +468,13 @@ OpenD 可用时，用下列日期查一次 `trade_date_type`：
 | D11 | 自动兜底 | 无；也不做官方 CSV 灾备 |
 | D12 | 美股 early close | `overrides.csv`，只补 `close_time` |
 | D13 | 缓存一致性 | parquet + 短文件锁，锁只包读—合并—写 |
-| D14 | 未覆盖区间 | 所有读接口（`is_trading_day` / `get_session_type` / `get_trading_days` / `get_calendar_frame` / next / previous）抛异常，不把未覆盖当休市 |
+| D14 | 未覆盖区间 | 所有读接口（`is_trading_day` / `get_session_type` / `get_trading_days` / `get_calendar_frame` / next / previous）抛异常，不把未覆盖当休市；周六/周日结构性休市除外 |
 | D15 | override 存放 | `data/calendars/<MARKET>/overrides.csv` 入库；缓存目录只放 futu 写出内容 |
 | D16 | 时段模型 | 市场默认用 segments 列表，`close_time` 只截断最后一个 segment |
 | D17 | 时间入参 | 日期型按市场本地日期；带时分秒必须 tz-aware，naive 拒绝 |
 | D18 | 缓存新鲜度 | 回退旧缓存时 `cache_stale=true`，调用方与回测结果可感知 |
 | D19 | 部分返回 | 仅未来侧越界允许夹取 + WARNING；历史/缓存侧缺一段即报错 |
-| D20 | coverage 收敛 | 只到最后一个已返回日期，不扩到 `today`；周末结构性休市 |
+| D20 | coverage 收敛 | 未发布分支：收敛到最后一个已返回日期，不扩到 `today`，已确认区间永不缩小；已发布分支：按契约信任记到 max(已确认右端, `min(end, 12/31)`)。后果：`today` 为工作日且超出 coverage 时抛 `CalendarFutureUnavailable`（负缓存内快速失败），今天不一定可查 |
 | D21 | meta 时间戳 | `covered_intervals` 每段带 `fetched_at`，历史补拉不影响当年 TTL |
+| D22 | 未来负缓存 | `future_probe_at` + TTL（默认 12h）；TTL 内未来查询直接抛错不发请求，`refresh=True` 绕过；跨自然年失效，已发布成功/refresh/prewarm 成功均清空 |
+| D23 | 接口契约信任 | 返回含至少一个未来日期即视为已发布到 12/31；不做启发式截断（长假附近易误判） |

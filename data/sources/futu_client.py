@@ -12,6 +12,7 @@ import futu as ft
 from futu import Market, SecurityType, SimpleFilter, AccumulateFilter, StockField, SortDir, RET_OK
 from ..base_client import BaseDataSourceClient
 from .adj_close import with_adj_close
+from utils.trading_calendar import normalize_market, normalize_trading_days_payload
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -292,6 +293,47 @@ class FutuAPIClient(BaseDataSourceClient):
         else:
             return pd.DataFrame()
     
+    def get_trading_days(
+        self,
+        market: str,
+        start: Optional[str] = None,
+        end: Optional[str] = None,
+        code: Optional[str] = None,
+    ) -> pd.DataFrame:
+        """获取交易日历（futu request_trading_days）。
+
+        Args:
+            market: HK / US / CN（SH、SZ 归一到 CN）
+            start / end: YYYY-MM-DD，缺省由 futu 决定
+            code: 股票代码；传入时 futu 会忽略 market（本设计不使用该路径）
+
+        Returns:
+            DataFrame: date + session_type（WHOLE / MORNING / AFTERNOON）
+
+        Raises:
+            ConnectionError: 客户端未连接
+            RuntimeError: futu 返回 RET_ERROR
+        """
+        if not self.connected or self.quote_ctx is None:
+            raise ConnectionError("Futu客户端未连接")
+
+        market_code = normalize_market(market)
+        # request_trading_days 走 Qot_Common.TradeDateMarket，key 为 HK/US/CN（无 SH/SZ）
+        futu_market = getattr(ft.TradeDateMarket, market_code)
+
+        kwargs = {}
+        if start:
+            kwargs["start"] = start
+        if end:
+            kwargs["end"] = end
+        if code:
+            kwargs["code"] = code
+
+        ret, data = self.quote_ctx.request_trading_days(futu_market, **kwargs)
+        if ret != RET_OK:
+            raise RuntimeError(f"Futu获取交易日历失败: {data}")
+        return normalize_trading_days_payload(data, market_code)
+
     def get_supported_markets(self) -> List[str]:
         """获取Futu支持的市场列表
         
