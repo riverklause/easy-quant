@@ -1237,3 +1237,58 @@ def test_P1C_5_calendar_unavailable_fails_closed():
         is False
     )
     assert dm.storage_manager.calls == []
+
+
+# --------------------------------------------------------------------------- #
+# P3：仓库内 US override 实际生效
+# --------------------------------------------------------------------------- #
+# --------------------------------------------------------------------------- #
+# P3：半天市 / 提前收市 / 午休的时段边界
+# --------------------------------------------------------------------------- #
+def test_P3_session_boundaries(tmp_path):
+    client = FakeClient(
+        {
+            "HK": {date(2024, 12, 24)},
+            "US": {date(2026, 11, 27)},
+            "CN": {date(2026, 11, 16)},
+        },
+        types={date(2024, 12, 24): "MORNING"},
+    )
+    write_override(tmp_path, "US", "date,close_time,source,note\n2026-11-27,13:00,manual,early\n")
+    write_override(tmp_path, "HK", "date,close_time,source,note\n2024-12-24,11:30,manual,half\n")
+    cal = make_cal(tmp_path, client)
+
+    # 港股半日：override 11:30 收，收盘时刻本身不算盘中
+    assert cal.is_trading_time(datetime(2024, 12, 24, 11, 29, tzinfo=HK), "HK") is True
+    assert cal.is_trading_time(datetime(2024, 12, 24, 11, 30, tzinfo=HK), "HK") is False
+
+    # 美股提前收市：13:00 收
+    assert cal.is_trading_time(datetime(2026, 11, 27, 12, 59, tzinfo=NY), "US") is True
+    assert cal.is_trading_time(datetime(2026, 11, 27, 13, 0, tzinfo=NY), "US") is False
+
+    # A 股午休与收盘边界
+    assert cal.is_trading_time(datetime(2026, 11, 16, 11, 29, tzinfo=SH), "CN") is True
+    assert cal.is_trading_time(datetime(2026, 11, 16, 11, 30, tzinfo=SH), "CN") is False
+    assert cal.is_trading_time(datetime(2026, 11, 16, 13, 0, tzinfo=SH), "CN") is True
+    assert cal.is_trading_time(datetime(2026, 11, 16, 15, 0, tzinfo=SH), "CN") is False
+
+
+def test_P3_us_override_file_applies_early_close(tmp_path):
+    """入库的 US override 必须能解析，并且只截断收盘时间。"""
+    overrides_dir = Path(__file__).resolve().parents[1] / "data" / "calendars"
+    client = FakeClient({"US": weekdays("2026-11-27", "2026-12-24")})
+    cal = TradingCalendar(
+        client=client,
+        cache_dir=tmp_path / "cache",
+        overrides_dir=overrides_dir,
+        now_provider=Clock(),
+        rate_limiter=NoopLimiter(),
+        retry_backoff=(),
+    )
+
+    assert cal.is_trading_time(datetime(2026, 11, 27, 12, 0, tzinfo=NY), "US") is True
+    assert cal.is_trading_time(datetime(2026, 11, 27, 13, 0, tzinfo=NY), "US") is False
+
+    frame = cal.get_calendar_frame("US", "2026-12-24", "2026-12-24")
+    assert frame["session_type"].tolist() == ["WHOLE"]
+    assert frame["close_time"].tolist() == ["13:00"]

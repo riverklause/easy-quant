@@ -112,6 +112,70 @@ def test_W6_corrupt_backtest_result_is_logged(tmp_path, caplog):
     assert df.empty
     assert "读取回测结果失败" in caplog.text
 
+def test_W8_calendar_status_shows_unavailable_instead_of_crashing(caplog):
+    """四类日历异常都必须变成可见提示：不崩溃、不静默降级。"""
+    import logging
+
+    from web.pages import home
+    from utils.trading_calendar import (
+        CalendarFutureUnavailable,
+        CalendarRateLimited,
+        CalendarUnavailable,
+    )
+
+    markets = (("HK", "港股"),)
+
+    assert "尚未初始化" in str(home.build_calendar_status(None, markets=markets))
+
+    class _RaisingCalendar:
+        def __init__(self, exc):
+            self.exc = exc
+
+        def get_session_type(self, moment, market):
+            raise self.exc
+
+    for exc, expected in (
+        (CalendarUnavailable("futu 未连接"), "交易日历不可用"),
+        (CalendarRateLimited("请求超限"), "交易日历不可用"),
+        (CalendarFutureUnavailable("跨年未发布"), "跨年日历未发布"),
+    ):
+        component = home.build_calendar_status(_RaisingCalendar(exc), markets=markets)
+        assert expected in str(component)
+
+    # 非日历异常同样不能把页面打崩，且要留下日志
+    with caplog.at_level(logging.ERROR, logger="web.pages.home"):
+        component = home.build_calendar_status(
+            _RaisingCalendar(RuntimeError("boom")), markets=markets
+        )
+    assert "交易日历不可用" in str(component)
+    assert "交易日历状态检查失败" in caplog.text
+
+
+def test_W9_calendar_status_renders_trading_and_closed_days():
+    from web.pages import home
+
+    markets = (("HK", "港股"),)
+
+    class _Calendar:
+        def __init__(self, session_type="WHOLE", intraday=True):
+            self.session_type = session_type
+            self.intraday = intraday
+
+        def get_session_type(self, moment, market):
+            return self.session_type
+
+        def is_trading_time(self, moment, market):
+            return self.intraday
+
+    assert "盘中" in str(home.build_calendar_status(_Calendar(), markets=markets))
+    assert "非盘中" in str(
+        home.build_calendar_status(_Calendar(intraday=False), markets=markets)
+    )
+    assert "今日休市" in str(
+        home.build_calendar_status(_Calendar(session_type=None), markets=markets)
+    )
+
+
 def test_W7_name_lookup_prefers_full_market_list(monkeypatch, tmp_path):
     """名称查全市场清单：只在 universe 外的代码也必须能显示。"""
     from web.pages import control_stock

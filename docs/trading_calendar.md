@@ -1,6 +1,6 @@
 # 交易日历设计
 
-> 状态：P0 已封版（能力层 + CAL-01～40 测试；尚未接入现有调用）
+> 状态：P0–P3 已封版（能力层 + 接入 + 回测过滤 + 半天市/展示；CAL-01～31 测试）
 > 最后更新：2026-11-16
 > 适用范围：港股（HK）、美股（US）、A 股（仅 SH/SZ，不含北交所）
 
@@ -359,6 +359,8 @@ OpenD 可用时，用下列日期查一次 `trade_date_type`：
 
 - 页面与定时任务统一走 `DataManager.get_trading_calendar()`。
 - 捕获 `CalendarUnavailable` / `CalendarOutOfRange` / `CalendarFutureUnavailable` / `CalendarRateLimited`，展示「交易日历不可用」或「跨年日历未发布」，不崩溃、不静默降级。
+- 首页「交易日历状态」卡片（`web/pages/home.py` 的 `build_calendar_status`）按 HK / US / CN 分别展示：交易日/盘中、交易日/非盘中、今日休市、交易日历不可用、跨年日历未发布；日历未初始化与未知异常也只展示提示，不影响页面其余部分。
+- 实时落盘遇到日历不可用直接拒绝落盘并 WARNING（见 §11.1），不使用工作日兜底。
 
 ## 12. 测试计划
 
@@ -396,6 +398,7 @@ OpenD 可用时，用下列日期查一次 `trade_date_type`：
 | CAL-28 | 已发布分支：返回含未来日期 → coverage 记到 max(已确认右端, min(end, 12/31))，尾部缺失按休市；未发布分支：收敛到最后一个返回日期 |
 | CAL-29 | 未来负缓存：`future_probe_at` TTL 内重复查询未来工作日不再请求 futu，直接抛 `CalendarFutureUnavailable`；`refresh=True` 或 TTL 过期后重新探测 |
 | CAL-30 | 纯周末区间（周六至周日）→ 返回空结果，不触发请求 |
+| CAL-31 | Web 首页日历状态：四类日历异常分别展示「交易日历不可用」/「跨年日历未发布」；未初始化与未知异常不崩溃 |
 
 ## 13. 实施阶段
 
@@ -424,9 +427,11 @@ OpenD 可用时，用下列日期查一次 `trade_date_type`：
 
 ### P3：半天市与展示
 
-- `is_trading_time`、US override、Web 不可用状态。
+- `is_trading_time`（已完成，CAL-14/25）；
+- US override（已完成，`data/calendars/US/overrides.csv` + 查询层合并，CAL-15/26）；
+- Web 不可用状态（已完成，首页日历状态卡片，CAL-31）。
 
-验收：港股半日、美股提前收市、A 股午休三组时段测试通过。
+验收：港股半日、美股提前收市、A 股午休三组时段测试通过；Web 端四类异常均有可见状态。
 
 ## 14. 运维约束
 
