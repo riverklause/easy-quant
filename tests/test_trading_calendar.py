@@ -650,10 +650,11 @@ def test_CAL_33_future_without_cache_raises_future_unavailable(tmp_path):
         cal.is_trading_day("2026-11-17", "HK")
     assert len(client.calls) == 1
 
-    # allow_partial=True 也不能在没有任何已覆盖前缀时返回空结果
+    # 同一实例会命中刚写入的负缓存；refresh 绕过它，才能真正钉住最终分支
+    # 里「allow_partial=True 也不返回空」这一条
     with pytest.raises(CalendarFutureUnavailable):
-        cal.get_trading_days("HK", "2026-11-17", "2026-11-20")
-    assert len(client.calls) == 1
+        cal.get_trading_days("HK", "2026-11-17", "2026-11-20", refresh=True)
+    assert len(client.calls) == 2
 
 
 def test_CAL_34_historical_empty_rechecked(tmp_path):
@@ -674,3 +675,91 @@ def test_CAL_35_historical_empty_unresolved_raises(tmp_path):
     with pytest.raises(CalendarUnavailable):
         cal.is_trading_day("2024-01-02", "HK")
     assert not (tmp_path / "cache" / "HK.meta.json").exists()
+
+
+def test_CAL_36_partial_cache_fetches_history_gap(tmp_path):
+    # 只有 1 月缓存时，请求全年不能把 2–11 月当成「未来未发布」
+    client = FakeClient({"HK": weekdays("2026-01-01", "2026-12-31")})
+    cal = make_cal(tmp_path, client)
+    assert len(cal.get_trading_days("HK", "2026-01-01", "2026-01-30")) == 22
+
+    before = len(client.calls)
+    days = cal.get_trading_days("HK", "2026-01-01", "2026-12-31")
+    assert len(client.calls) == before + 1
+    assert client.calls[-1][1] == date(2026, 2, 2)  # 第一个缺失工作日
+    assert len(days) == len(weekdays("2026-01-01", "2026-12-31"))
+
+
+def test_CAL_37_stale_refreshes_covered_prefix_with_gap(tmp_path):
+    # 1–6 月过期 + 7–12 月缺失：不能只补缺口而沿用过期前缀
+    client = FakeClient({"HK": weekdays("2026-01-01", "2026-12-31")})
+    clock = Clock()
+    cal = make_cal(tmp_path, client, clock)
+    cal.get_trading_days("HK", "2026-01-01", "2026-06-30")
+
+    clock.advance(hours=13)
+    before = len(client.calls)
+    cal.get_trading_days("HK", "2026-01-01", "2026-12-31")
+    assert len(client.calls) == before + 1
+    assert client.calls[-1][1:] == (date(2026, 1, 1), date(2026, 12, 31))
+
+
+def test_CAL_38_rate_limiter_threads_reserve_slots():
+    limiter = RateLimiter(min_interval=0.05, max_calls=25, window=30.0)
+    barrier = threading.Barrier(5)
+    stamps: list[float] = []
+    guard = threading.Lock()
+
+    def worker() -> None:
+        barrier.wait()
+        limiter.acquire()
+        with guard:
+            stamps.append(time.monotonic())
+
+    threads = [threading.Thread(target=worker) for _ in range(5)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    stamps.sort()
+    assert len(stamps) == 5
+    gaps = [later - earlier for earlier, later in zip(stamps, stamps[1:])]
+    assert min(gaps) >= 0.04
+
+
+class ScriptedClient:
+    """按调用顺序返回预置结果，用于构造「窄请求空、宽请求有数据」。"""
+
+    def __init__(self, responses: list[pd.DataFrame]) -> None:
+        self.responses = list(responses)
+        self.calls: list[tuple[str, date, date]] = []
+
+    def get_trading_days(self, market: str, start: str, end: str) -> pd.DataFrame:
+        self.calls.append(
+            (normalize_market(market), date.fromisoformat(start), date.fromisoformat(end))
+        )
+        return self.responses.pop(0)
+
+
+def _frame(*days: str) -> pd.DataFrame:
+    return pd.DataFrame({"date": list(days), "session_type": ["WHOLE"] * len(days)})
+
+
+def test_CAL_39_historical_empty_wide_hit_fills_rows(tmp_path):
+    # 宽请求在 chunk 内命中行时，应补进 frame 而不是丢弃
+    client = ScriptedClient([_frame(), _frame("2024-01-02", "2024-01-03")])
+    cal = make_cal(tmp_path, client)
+
+    days = cal.get_trading_days("HK", "2024-01-02", "2024-01-03")
+    assert days.strftime("%Y-%m-%d").tolist() == ["2024-01-02", "2024-01-03"]
+    assert len(client.calls) == 2
+
+
+def test_CAL_40_weekend_calendar_frame_no_request(tmp_path):
+    client = FakeClient({"HK": weekdays("2026-01-01", "2026-12-31")})
+    cal = make_cal(tmp_path, client)
+
+    frame = cal.get_calendar_frame("HK", "2026-11-14", "2026-11-15")
+    assert frame.empty
+    assert client.calls == []

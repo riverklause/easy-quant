@@ -1,6 +1,6 @@
 # 交易日历设计
 
-> 状态：设计定稿，尚未实现
+> 状态：P0 已封版（能力层 + CAL-01～40 测试；尚未接入现有调用）
 > 最后更新：2026-11-16
 > 适用范围：港股（HK）、美股（US）、A 股（仅 SH/SZ，不含北交所）
 
@@ -220,7 +220,7 @@ data/cache/trading_calendar/
 - `future_probe_at` 只在同一自然年内有效：跨年后视为失效并清空，避免 12/31 的探测压住 1/1 的新日历；**已发布分支成功、`refresh=True`、`prewarm` 成功时都必须清空**。
 - 查询顺序固定：先判 coverage（完整覆盖且未过 TTL → 直接用缓存）→ 再判负缓存 → 最后才回源。
 - futu 返回空（一条数据都没有）：只写 `future_probe_at`，不创建任何 `covered_intervals`；禁止写入 `start > end` 的零长度区间。
-- coverage 写入不变量：按 `start` 排序、互不重叠；已发布分支扩右端时必须裁剪或替换旧段；相邻区间仅 `fetched_at` 相同才合并。
+- coverage 写入不变量：按 `start` 排序、互不重叠；已发布分支扩右端时必须裁剪或替换旧段；相邻区间仅 `fetched_at` 相同才合并。强制区间（`refresh` / `prewarm` / TTL 刷新）可能包含周末，coverage 是否完整一律按工作日语义判断（周末结构性休市，不要求覆盖）。
 - 缓存损坏（读失败、缺列、sha 不匹配）：WARNING 后重新请求。
 - `fetched_at` 按区间记录：只有覆盖今年那一段的 `fetched_at` 参与 TTL，补拉历史区间不会刷新当年的新鲜度。
 

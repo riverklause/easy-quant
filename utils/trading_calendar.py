@@ -283,21 +283,23 @@ class RateLimiter:
         self._lock = threading.Lock()
 
     def acquire(self) -> None:
+        # 锁内预订时间槽：并发线程拿到的是不同 slot，不会同时睡醒后一起放行。
         with self._lock:
             now = self._clock()
             while self._stamps and now - self._stamps[0] >= self.window:
                 self._stamps.popleft()
-            wait = 0.0
+            slot = now
+            if self._last is not None:
+                slot = max(slot, self._last + self.min_interval)
             if len(self._stamps) >= self.max_calls:
-                wait = self._stamps[0] + self.window - now
-            if self._last is not None and now - self._last < self.min_interval:
-                wait = max(wait, self.min_interval - (now - self._last))
-        if wait > 0:
+                slot = max(slot, self._stamps[0] + self.window)
+            self._stamps.append(slot)
+            self._last = slot
+        while True:
+            wait = slot - self._clock()
+            if wait <= 0:
+                break
             self._sleep(wait)
-        with self._lock:
-            now = self._clock()
-            self._stamps.append(now)
-            self._last = now
 
 
 # --------------------------------------------------------------------------- #
@@ -824,12 +826,23 @@ class TradingCalendar:
     def _current_year_stale(
         self, intervals: Sequence[_Interval], start: date, end: date, today: date
     ) -> bool:
+        """当年窗口内任一覆盖段过期即 stale；没有相交段也视为 stale。"""
         window_start = max(start, date(today.year, 1, 1))
         window_end = min(end, date(today.year, 12, 31))
-        for interval in intervals:
-            if interval.start <= window_end and interval.end >= window_start:
-                return (self._now() - interval.fetched_at).total_seconds() > self.refresh_ttl
-        return True
+        if window_start > window_end:
+            return False
+        now = self._now()
+        intersecting = [
+            interval
+            for interval in intervals
+            if interval.start <= window_end and interval.end >= window_start
+        ]
+        if not intersecting:
+            return True
+        return any(
+            (now - interval.fetched_at).total_seconds() > self.refresh_ttl
+            for interval in intersecting
+        )
 
     def _intersects_current_year(self, start: date, end: date, today: date) -> bool:
         return start.year == today.year or end.year == today.year or (start <= date(today.year, 1, 1) <= end)
@@ -853,6 +866,11 @@ class TradingCalendar:
             frame = self._frames[market]
             intervals = self._intervals[market]
             probe = self._probes[market]
+
+            # 纯周末区间：结构性休市，不需要 coverage，也不该触发请求
+            if all(_is_weekend(day) for day in _date_range(start, end)):
+                self._mark(market, "cache", False)
+                return frame
 
             min_date, max_date, today = self._window(market)
 
@@ -892,7 +910,7 @@ class TradingCalendar:
 
             missing = _missing_workdays(intervals, hist_start, clamped_end)
             stale = False
-            if not refresh and not missing and self._intersects_current_year(hist_start, clamped_end, today):
+            if not refresh and self._intersects_current_year(hist_start, clamped_end, today):
                 stale = self._current_year_stale(intervals, hist_start, clamped_end, today)
 
             if not missing and not stale and not refresh:
@@ -904,14 +922,15 @@ class TradingCalendar:
             right = _coverage_right(intervals)
 
             # 先判 coverage：已确认前缀内可返回时，不因未来未发布而回源。
-            # 没有前缀时必须回源探测，不能把「尚未请求」当成「未发布」。
+            # 边界必须是 today，不能是 coverage 的 right——否则 2–11 月这类
+            # 历史缺口会被误判成「未来未发布」，一次 futu 都不请求。
             if (
                 missing
                 and not refresh
                 and not stale
                 and right is not None
                 and hist_start <= right
-                and all(gap_start > right for gap_start, _ in missing)
+                and all(gap_start >= today for gap_start, _ in missing)
             ):
                 if allow_partial:
                     logger.warning("[%s] 未来日历未发布，返回已覆盖部分（截至 %s）", market, right)
@@ -923,12 +942,9 @@ class TradingCalendar:
                     f"[{market}] {hist_start}-{clamped_end} 超出已确认 coverage（截至 {right}）"
                 )
 
-            # 再判负缓存
+            # 再判负缓存（历史缺口不受负缓存约束）
             if missing and not refresh and self._probe_fresh(probe, today):
-                future_only = (
-                    hist_start > right if right is not None else hist_start > today
-                )
-                if future_only:
+                if all(gap_start >= today for gap_start, _ in missing):
                     raise CalendarFutureUnavailable(
                         f"[{market}] 未来日历未发布（负缓存至 {probe.isoformat()}），暂不请求 futu"
                     )
@@ -982,8 +998,7 @@ class TradingCalendar:
             remaining = _missing_workdays(intervals, hist_start, clamped_end)
             if remaining:
                 right = _coverage_right(intervals)
-                boundary = right if right is not None else today
-                future_only = all(gap_start > boundary for gap_start, _ in remaining)
+                future_only = all(gap_start >= today for gap_start, _ in remaining)
                 if future_only:
                     has_prefix = right is not None and hist_start <= right
                     if allow_partial and has_prefix:
@@ -998,7 +1013,8 @@ class TradingCalendar:
                         )
                         return frame
                     raise CalendarFutureUnavailable(
-                        f"[{market}] {remaining[0][0]} 起未来日历未发布（已确认截至 {boundary}）"
+                        f"[{market}] {remaining[0][0]} 起未来日历未发布"
+                        f"（已确认截至 {right if right is not None else today}）"
                     )
                 raise CalendarUnavailable(
                     f"[{market}] 缓存仍有覆盖空洞：{remaining[:3]}"
