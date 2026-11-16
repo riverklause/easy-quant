@@ -145,7 +145,10 @@ def _infer_one_market(symbol: Any) -> Optional[str]:
         if tail in _SYMBOL_SUFFIX_MARKETS:
             return _SYMBOL_SUFFIX_MARKETS[tail]
         return None
-    # 裸代码只认纯字母美股；数字裸代码无法区分沪/深，按未知处理
+    # 裸代码只认纯字母美股；数字裸代码无法区分沪/深，按未知处理。
+    # 裸市场码（HK/US/CN/SH/SZ/BJ）不是标的，返回 None，避免误判为美股。
+    if text in _SYMBOL_PREFIX_MARKETS:
+        return None
     return "US" if text.isalpha() else None
 
 

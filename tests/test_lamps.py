@@ -26,6 +26,7 @@ from strategy.indicator_assembly import ensure_indicators
 from strategy.indicator_spec import IndicatorSpec
 from strategy.strategy_executor import StrategyExecutor
 from strategy.technical_strategy import TechnicalStrategy
+from utils.trading_calendar import CalendarUnavailable
 
 DATE = pd.Timestamp("2024-01-02")
 
@@ -266,11 +267,21 @@ class _SignalEveryBar(TechnicalStrategy):
         return [{"type": "BUY"}]
 
 
+class _BusinessDayCalendar:
+    """夹具日历：工作日即交易日，保证既有 bar 不被剔除。"""
+
+    last_source = "cache"
+    cache_stale = False
+
+    def get_trading_days(self, market, start=None, end=None, refresh=False):
+        return pd.bdate_range(start=start, end=end)
+
+
 class _SpyFeed(HistoricalDataFeed):
     """L4a fixture：只记录引擎是否把取数委托给 datafeed。"""
 
     def __init__(self):
-        super().__init__(data_manager=None)
+        super().__init__(data_manager=None, calendar=_BusinessDayCalendar())
         self.calls = 0
 
     async def get_data(self, symbols, start_date, end_date, frequency="daily"):
@@ -647,3 +658,190 @@ def test_L9_adx_condition_reads_the_adx_column():
     assert strong._calculate_indicator(bars) == 100.0
     assert strong.evaluate(bars)                       # adx=100 > 25
     assert not WeakTrend(period=2, threshold=25).evaluate(bars)
+
+
+# --------------------------------------------------------------------------- #
+# P2：回测引擎按标的做交易日历卫生过滤
+# --------------------------------------------------------------------------- #
+class _StaticCalendar:
+    def __init__(self, days, error=None):
+        self.days = pd.DatetimeIndex(days)
+        self.error = error
+        self.calls = []
+        self.last_source = "cache"
+        self.cache_stale = False
+
+    def get_trading_days(self, market, start=None, end=None, refresh=False):
+        self.calls.append(market)
+        if self.error:
+            raise self.error
+        return self.days[(self.days >= start) & (self.days <= end)]
+
+
+class _PerMarketCalendar:
+    def __init__(self, mapping):
+        self.mapping = {k: pd.DatetimeIndex(v) for k, v in mapping.items()}
+        self.calls = []
+        self.last_source = "futu"
+        self.cache_stale = False
+
+    def get_trading_days(self, market, start=None, end=None, refresh=False):
+        self.calls.append(market)
+        days = self.mapping[market]
+        return days[(days >= start) & (days <= end)]
+
+
+class _BarsFeed(HistoricalDataFeed):
+    def __init__(self, bars, calendar=None):
+        super().__init__(data_manager=None, calendar=calendar)
+        self.bars = bars
+
+    async def get_data(self, symbols, start_date, end_date, frequency="daily"):
+        return {symbol: self.bars[symbol] for symbol in symbols}
+
+
+def _bars_with_index(index) -> pd.DataFrame:
+    close = [10.0 + i * 0.1 for i in range(len(index))]
+    return pd.DataFrame(
+        {
+            "open": close,
+            "high": [c + 0.1 for c in close],
+            "low": [c - 0.1 for c in close],
+            "close": close,
+            "volume": [1000] * len(index),
+        },
+        index=index,
+    )
+
+
+def _bars_on(days) -> pd.DataFrame:
+    return _bars_with_index(pd.DatetimeIndex(days))
+
+
+def test_P2_1_non_trading_bars_are_dropped_and_counted():
+    days = pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-04"])
+    cal = _StaticCalendar(pd.to_datetime(["2024-01-02", "2024-01-04"]))
+    engine = BacktestEngine(
+        strategy=_SignalEveryBar(),
+        datafeed=_BarsFeed({"HK.00700": _bars_on(days)}, cal),
+        initial_capital=1_000_000,
+    )
+
+    result = engine.run("2024-01-02", "2024-01-04", symbols=["HK.00700"])
+
+    assert list(engine.get_data()["HK.00700"].index) == [days[0], days[2]]
+    assert result.config["calendar_dropped_bars"] == {"HK.00700": 1}
+    assert result.config["calendar_source"] == {"HK": "cache"}
+    assert result.config["calendar_stale"] is False
+    assert result.config["calendar_range"] == {
+        "HK": {"start": "2024-01-02", "end": "2024-01-04"}
+    }
+
+
+def test_P2_2_mixed_markets_are_filtered_per_symbol():
+    days = pd.to_datetime(["2024-01-02", "2024-01-03"])
+    cal = _PerMarketCalendar(
+        {
+            "HK": days,
+            "US": days[:1],
+        }
+    )
+    engine = BacktestEngine(
+        strategy=_SignalEveryBar(),
+        datafeed=_BarsFeed(
+            {"HK.00700": _bars_on(days), "US.AAPL": _bars_on(days)}, cal
+        ),
+        initial_capital=1_000_000,
+    )
+
+    result = engine.run("2024-01-02", "2024-01-03", symbols=["HK.00700", "US.AAPL"])
+
+    assert set(cal.calls) == {"HK", "US"}
+    assert result.config["calendar_dropped_bars"] == {"HK.00700": 0, "US.AAPL": 1}
+    assert len(engine.get_data()["HK.00700"]) == 2
+    assert len(engine.get_data()["US.AAPL"]) == 1
+
+
+def test_P2_3_real_path_without_calendar_fails():
+    days = pd.to_datetime(["2024-01-02"])
+    engine = BacktestEngine(
+        strategy=_SignalEveryBar(),
+        datafeed=_BarsFeed({"HK.00700": _bars_on(days)}),
+        initial_capital=1_000_000,
+    )
+
+    with pytest.raises(CalendarUnavailable):
+        engine.run("2024-01-02", "2024-01-02", symbols=["HK.00700"])
+
+
+def test_P2_4_unknown_market_fails_instead_of_skipping_filter():
+    days = pd.to_datetime(["2024-01-02"])
+    engine = BacktestEngine(
+        strategy=_SignalEveryBar(),
+        datafeed=_BarsFeed({"600000": _bars_on(days)}, _StaticCalendar(days)),
+        initial_capital=1_000_000,
+    )
+
+    with pytest.raises(ValueError, match="无法推断"):
+        engine.run("2024-01-02", "2024-01-02", symbols=["600000"])
+
+
+def test_P2_5_mock_path_skips_calendar_filter():
+    engine = BacktestEngine(strategy=_SignalEveryBar(), initial_capital=1_000_000)
+
+    result = engine.run("2024-01-01", "2024-03-01", symbols=["X"])
+
+    assert result.config["calendar_source"] == {"mock": "none"}
+    assert result.config["calendar_dropped_bars"] == {}
+    assert result.config["calendar_stale"] is False
+
+
+def test_P2_6_calendar_error_fails_the_run():
+    days = pd.to_datetime(["2024-01-02"])
+    cal = _StaticCalendar(days, error=CalendarUnavailable("down"))
+    engine = BacktestEngine(
+        strategy=_SignalEveryBar(),
+        datafeed=_BarsFeed({"HK.00700": _bars_on(days)}, cal),
+        initial_capital=1_000_000,
+    )
+
+    with pytest.raises(CalendarUnavailable):
+        engine.run("2024-01-02", "2024-01-02", symbols=["HK.00700"])
+
+
+def test_P2_7_multiindex_bars_are_normalized():
+    """yfinance/futu 批量接口返回 MultiIndex(time_key, code)，过滤前必须降级。"""
+    days = pd.to_datetime(["2024-01-02", "2024-01-03"])
+    index = pd.MultiIndex.from_product(
+        [days, ["HK.00700"]], names=["time_key", "code"]
+    )
+    cal = _StaticCalendar(days)
+    engine = BacktestEngine(
+        strategy=_SignalEveryBar(),
+        datafeed=_BarsFeed({"HK.00700": _bars_with_index(index)}, cal),
+        initial_capital=1_000_000,
+    )
+
+    result = engine.run("2024-01-02", "2024-01-03", symbols=["HK.00700"])
+
+    assert len(engine.get_data()["HK.00700"]) == 2
+    assert list(engine.get_data()["HK.00700"].index) == list(days)
+    assert result.config["calendar_dropped_bars"] == {"HK.00700": 0}
+
+
+def test_P2_8_tz_aware_bars_are_normalized_to_session_dates():
+    """tz-aware 索引不能直接和 naive 交易日 isin，否则会被全量剔除。"""
+    days = pd.to_datetime(["2024-01-02", "2024-01-03"])
+    index = pd.DatetimeIndex(days, tz="America/New_York")
+    cal = _StaticCalendar(days)
+    engine = BacktestEngine(
+        strategy=_SignalEveryBar(),
+        datafeed=_BarsFeed({"US.AAPL": _bars_with_index(index)}, cal),
+        initial_capital=1_000_000,
+    )
+
+    result = engine.run("2024-01-02", "2024-01-03", symbols=["US.AAPL"])
+
+    assert len(engine.get_data()["US.AAPL"]) == 2
+    assert list(engine.get_data()["US.AAPL"].index) == list(days)
+    assert result.config["calendar_dropped_bars"] == {"US.AAPL": 0}

@@ -335,7 +335,7 @@ OpenD 可用时，用下列日期查一次 `trade_date_type`：
 
 ### 11.2 HistoricalDataFeed
 
-- `get_trading_dates(start, end, market)` 走日历；真实数据路径日历不可用直接抛错，不回 `freq='B'`。
+- `get_trading_dates(start, end, market)` 走日历；真实数据路径日历不可用直接抛错，不回 `freq='B'`。只有 `calendar is None` 且 `data_manager` 没有 `get_trading_calendar` 入口时才降级；入口存在但失败必须抛。
 - `market` 默认 `hk` 只为兼容旧的两参数调用；调用方必须按标的市场显式传入，不得依赖默认值。
 - mock 日线：单一市场可推断时用日历；日历不可用、推断不出市场或跨市场时，回落到工作日并 WARNING，仅限 mock。
 - 真实数据路径不允许任何工作日降级。
@@ -348,10 +348,11 @@ OpenD 可用时，用下列日期查一次 `trade_date_type`：
 - 日历不可用（缺覆盖）→ 直接失败，不跳过过滤继续跑。
 - 半天市仍是交易日，不剔除。
 - 结果写入 `BacktestResult.config`：
-  - `calendar_source`：`futu` / `cache`；
-  - `calendar_stale`：是否回退了过期缓存；
+  - `calendar_source`：按市场记录 `futu` / `cache`；mock 跳过过滤时为 `{"mock": "none"}`；
+  - `calendar_stale`：是否回退了过期缓存（任一市场 stale 即为 true）；
   - `calendar_dropped_bars`：按标的计数；
-  - `calendar_range`：实际查询区间。
+  - `calendar_range`：按市场记录实际查询区间。
+- mock 数据没有市场事实来源，日历缺失时允许跳过过滤；真实数据路径不允许。
 - 剔除比例超过阈值（默认 5%）时 WARNING。
 
 ### 11.4 Web / 实时

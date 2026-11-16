@@ -872,6 +872,9 @@ def test_P1A_4_new_without_init_is_supported(tmp_path, monkeypatch):
         ("   ", None),
         (None, None),
         ("XYZ.ABC", None),
+        ("HK", None),
+        ("US", None),
+        ("CN", None),
     ],
 )
 def test_P1B_1_infer_market(symbol, market):

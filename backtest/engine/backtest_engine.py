@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 from backtest.engine.portfolio import Portfolio
 from backtest.engine.position_sizer import FixedFractionSizer, PositionSizer
-from backtest.datafeed.historical_datafeed import HistoricalDataFeed
+from backtest.datafeed.historical_datafeed import HistoricalDataFeed, normalize_frame_index
 from backtest.analyzers.performance import PerformanceAnalyzer
 from backtest.analyzers.risk import RiskAnalyzer
 from backtest.analyzers.trade_analyzer import TradeAnalyzer
@@ -28,6 +28,7 @@ from strategy.indicator_assembly import ensure_indicators
 from strategy.indicator_spec import indicator_ids
 from strategy.technical_strategy import TechnicalStrategy
 from strategy.multi_factor.multi_factor_strategy import MultiFactorStrategy
+from utils.trading_calendar import CalendarUnavailable, infer_market
 
 
 class BacktestEngine:
@@ -93,6 +94,13 @@ class BacktestEngine:
         self.failed_strategies = 0
         self.indicator_errors = 0
         self.data_source = ""
+
+        # 交易日历过滤结果（写入 BacktestResult.config）
+        self._calendar_source: Dict[str, str] = {}
+        self._calendar_stale = False
+        self._calendar_dropped_bars: Dict[str, int] = {}
+        self._calendar_range: Dict[str, Dict[str, str]] = {}
+        self.calendar_drop_warn_threshold = 0.05
         
         self._progress_callback: Optional[Callable] = None
     
@@ -134,6 +142,10 @@ class BacktestEngine:
         self.failed_signals = 0
         self.failed_strategies = 0
         self.indicator_errors = 0
+        self._calendar_source = {}
+        self._calendar_stale = False
+        self._calendar_dropped_bars = {}
+        self._calendar_range = {}
         for strategy in self.strategies:
             strategy.reset_stats()
 
@@ -146,6 +158,8 @@ class BacktestEngine:
         if not self._data:
             logger.warning("没有加载到数据，回测终止")
             return self._create_empty_result(start_date, end_date)
+
+        self._filter_non_trading_bars()
 
         trading_dates = self._get_trading_dates()
         prev_value = self.initial_capital
@@ -196,6 +210,96 @@ class BacktestEngine:
         self.data_source = (
             "mock" if getattr(self.datafeed, "used_mock", False) else "datafeed"
         )
+
+    def _filter_non_trading_bars(self):
+        """按标的所属市场剔除不在交易日历中的 bar，并记录过滤信息。
+
+        真实数据路径日历缺失直接失败；mock 数据没有市场事实来源，允许跳过。
+        """
+        if not self._data:
+            return
+
+        # 自定义 datafeed 可能直接返回 MultiIndex(带 code) 或 tz-aware 索引；
+        # 统一在过滤前降成 naive session-date DatetimeIndex。
+        for symbol in list(self._data):
+            self._data[symbol] = normalize_frame_index(self._data[symbol], symbol)
+
+        get_calendar = getattr(self.datafeed, "get_calendar", None)
+        calendar = get_calendar() if callable(get_calendar) else None
+        used_mock = getattr(self.datafeed, "used_mock", False)
+        if calendar is None:
+            if used_mock:
+                logger.warning("mock 数据未配置交易日历，跳过非交易日过滤")
+                self._calendar_source = {"mock": "none"}
+                return
+            raise CalendarUnavailable("回测需要交易日历，但 datafeed 未提供")
+
+        by_market: Dict[str, List[str]] = {}
+        for symbol in self._data:
+            market = infer_market(symbol)
+            if market is None:
+                if used_mock:
+                    logger.warning(
+                        "mock 数据无法推断标的 %s 的市场，跳过日历过滤", symbol
+                    )
+                    self._calendar_dropped_bars[symbol] = 0
+                    continue
+                raise ValueError(
+                    f"无法推断标的 {symbol} 的市场，拒绝跳过交易日过滤"
+                )
+            by_market.setdefault(market, []).append(symbol)
+
+        for market, symbols in by_market.items():
+            # 先给每个标的落 0，空帧市场也能在结果里看到字段
+            for symbol in symbols:
+                self._calendar_dropped_bars[symbol] = 0
+
+            frames = [self._data[s] for s in symbols if not self._data[s].empty]
+            if not frames:
+                continue
+
+            query_start = min(df.index.min() for df in frames)
+            query_end = max(df.index.max() for df in frames)
+            trading_days = calendar.get_trading_days(market, query_start, query_end)
+
+            self._calendar_source[market] = (
+                getattr(calendar, "last_source", None) or "unknown"
+            )
+            self._calendar_stale = self._calendar_stale or bool(
+                getattr(calendar, "cache_stale", False)
+            )
+            self._calendar_range[market] = {
+                "start": self._calendar_day_str(query_start),
+                "end": self._calendar_day_str(query_end),
+            }
+
+            for symbol in symbols:
+                df = self._data[symbol]
+                if df.empty:
+                    continue
+
+                keep = df.index.isin(trading_days)
+                dropped = int((~keep).sum())
+                self._calendar_dropped_bars[symbol] = dropped
+                if not dropped:
+                    continue
+
+                if dropped / len(df) > self.calendar_drop_warn_threshold:
+                    logger.warning(
+                        "[%s] %s 剔除 %d/%d 根非交易日 bar（超过 %.0f%%）",
+                        market,
+                        symbol,
+                        dropped,
+                        len(df),
+                        self.calendar_drop_warn_threshold * 100,
+                    )
+                self._data[symbol] = df.loc[keep]
+
+    @staticmethod
+    def _calendar_day_str(value) -> str:
+        if hasattr(value, "date"):
+            return value.date().isoformat()
+        return str(value)
     
     def _get_strategy_symbols(self) -> List[str]:
         """获取策略所需的股票代码"""
@@ -519,6 +623,10 @@ class BacktestEngine:
                 'slippage': self.portfolio.slippage,
                 'risk_free_rate': self.risk_free_rate,
                 'datafeed': type(self.datafeed).__name__,
+                'calendar_source': self._calendar_source,
+                'calendar_stale': self._calendar_stale,
+                'calendar_dropped_bars': self._calendar_dropped_bars,
+                'calendar_range': self._calendar_range,
             },
             execution_failures={
                 "signals": self.failed_signals,
@@ -537,6 +645,12 @@ class BacktestEngine:
             initial_capital=self.initial_capital,
             execution_failures={"signals": 0, "strategies": 0, "indicators": 0},
             data_source=self.data_source,
+            config={
+                'calendar_source': self._calendar_source,
+                'calendar_stale': self._calendar_stale,
+                'calendar_dropped_bars': self._calendar_dropped_bars,
+                'calendar_range': self._calendar_range,
+            },
         )
     
     def get_results(self) -> Optional[BacktestResult]:

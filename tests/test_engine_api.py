@@ -20,9 +20,17 @@ class _BuyOnce(TechnicalStrategy):
         return [{"type": "BUY"}]
 
 
+class _BusinessDayCalendar:
+    last_source = "cache"
+    cache_stale = False
+
+    def get_trading_days(self, market, start=None, end=None, refresh=False):
+        return pd.bdate_range(start=start, end=end)
+
+
 class _SpyFeed(HistoricalDataFeed):
     def __init__(self):
-        super().__init__(data_manager=None)
+        super().__init__(data_manager=None, calendar=_BusinessDayCalendar())
         self.calls = 0
 
     async def get_data(self, symbols, start_date, end_date, frequency="daily"):

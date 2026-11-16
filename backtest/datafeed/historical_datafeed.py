@@ -11,9 +11,44 @@ import pandas as pd
 import numpy as np
 from abc import ABC, abstractmethod
 
-from utils.trading_calendar import CalendarError, infer_market
+from utils.trading_calendar import CalendarError, infer_market, market_timezone
 
 logger = logging.getLogger(__name__)
+
+
+def normalize_frame_index(df: pd.DataFrame, symbol: str) -> pd.DataFrame:
+    """把 DataFeed 返回的索引统一成 naive 的 session-date DatetimeIndex。
+
+    真实数据源可能返回：
+    - MultiIndex(time_key, code)（yfinance/futu 批量接口）；
+    - 带时区的 DatetimeIndex（yfinance 某些接口）；
+    - 带时分秒的 DatetimeIndex。
+    引擎按 session date 做日历过滤，必须先降到这里只含日期的 naive 索引。
+    """
+    if df.empty:
+        return df
+
+    index = df.index
+    if isinstance(index, pd.MultiIndex):
+        level = "time_key" if "time_key" in index.names else 0
+        index = index.get_level_values(level)
+
+    if not isinstance(index, pd.DatetimeIndex):
+        try:
+            index = pd.DatetimeIndex(index)
+        except (TypeError, ValueError):
+            return df
+
+    market = infer_market(symbol)
+    if index.tz is not None:
+        if market is not None:
+            index = index.tz_convert(market_timezone(market))
+        index = index.tz_localize(None)
+
+    frame = df.copy()
+    frame.index = index.normalize()
+    frame = frame[~frame.index.duplicated(keep="last")].sort_index()
+    return frame
 
 
 class BaseDataFeed(ABC):
@@ -131,6 +166,7 @@ class HistoricalDataFeed(BaseDataFeed):
                 )
                 
                 if data is not None and not data.empty:
+                    data = normalize_frame_index(data, symbol)
                     result[symbol] = data
                     self._cache[cache_key] = data
                     
@@ -298,6 +334,13 @@ class HistoricalDataFeed(BaseDataFeed):
         
         return returns.dropna()
     
+    def get_calendar(self):
+        """返回已解析的日历；入口存在但构造失败时原样抛出。"""
+        calendar = self._get_calendar()
+        if calendar is None and self._calendar_error is not None:
+            raise self._calendar_error
+        return calendar
+
     def get_trading_dates(self, start_date: str, end_date: str, market: str = "hk") -> pd.DatetimeIndex:
         """
         获取交易日列表
@@ -311,12 +354,10 @@ class HistoricalDataFeed(BaseDataFeed):
         Returns:
             交易日索引
         """
-        calendar = self._get_calendar()
+        calendar = self.get_calendar()
         if calendar is not None:
             # 日历异常原样抛出，不回工作日
             return calendar.get_trading_days(market, start_date, end_date)
-        if self._calendar_error is not None:
-            raise self._calendar_error
 
         logger.warning("未配置交易日历，回退工作日 freq='B'")
         return pd.date_range(start=start_date, end=end_date, freq='B')
