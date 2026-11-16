@@ -845,3 +845,39 @@ def test_P2_8_tz_aware_bars_are_normalized_to_session_dates():
     assert len(engine.get_data()["US.AAPL"]) == 2
     assert list(engine.get_data()["US.AAPL"].index) == list(days)
     assert result.config["calendar_dropped_bars"] == {"US.AAPL": 0}
+
+
+def test_P2_9_empty_frames_still_report_zero_dropped():
+    cal = _StaticCalendar(pd.to_datetime(["2024-01-02"]))
+    engine = BacktestEngine(
+        strategy=_SignalEveryBar(),
+        datafeed=_BarsFeed({"HK.00700": _bars_on([])}, cal),
+        initial_capital=1_000_000,
+    )
+
+    result = engine.run("2024-01-02", "2024-01-02", symbols=["HK.00700"])
+
+    assert result.config["calendar_dropped_bars"] == {"HK.00700": 0}
+    assert cal.calls == []
+
+
+class _MockBarsFeed(_BarsFeed):
+    def __init__(self, bars, calendar=None):
+        super().__init__(bars, calendar)
+        self.used_mock = True
+
+
+def test_P2_10_mock_unknown_market_skips_filter():
+    days = pd.to_datetime(["2024-01-02"])
+    cal = _StaticCalendar(days)
+    engine = BacktestEngine(
+        strategy=_SignalEveryBar(),
+        datafeed=_MockBarsFeed({"600000": _bars_on(days)}, cal),
+        initial_capital=1_000_000,
+    )
+
+    result = engine.run("2024-01-02", "2024-01-02", symbols=["600000"])
+
+    assert result.data_source == "mock"
+    assert result.config["calendar_dropped_bars"] == {"600000": 0}
+    assert cal.calls == []

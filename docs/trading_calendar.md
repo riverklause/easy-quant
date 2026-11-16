@@ -352,7 +352,7 @@ OpenD 可用时，用下列日期查一次 `trade_date_type`：
   - `calendar_stale`：是否回退了过期缓存（任一市场 stale 即为 true）；
   - `calendar_dropped_bars`：按标的计数；
   - `calendar_range`：按市场记录实际查询区间。
-- mock 数据没有市场事实来源，日历缺失时允许跳过过滤；真实数据路径不允许。
+- mock 数据没有市场事实来源，日历缺失或标的无法推断市场时允许跳过过滤；真实数据路径不允许。
 - 剔除比例超过阈值（默认 5%）时 WARNING。
 
 ### 11.4 Web / 实时
