@@ -336,6 +336,7 @@ OpenD 可用时，用下列日期查一次 `trade_date_type`：
 ### 11.2 HistoricalDataFeed
 
 - `get_trading_dates(start, end, market)` 走日历；真实数据路径日历不可用直接抛错，不回 `freq='B'`。
+- `market` 默认 `hk` 只为兼容旧的两参数调用；调用方必须按标的市场显式传入，不得依赖默认值。
 - mock 日线：单一市场可推断时用日历；日历不可用、推断不出市场或跨市场时，回落到工作日并 WARNING，仅限 mock。
 - 真实数据路径不允许任何工作日降级。
 

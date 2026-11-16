@@ -11,6 +11,8 @@ import pandas as pd
 import numpy as np
 from abc import ABC, abstractmethod
 
+from utils.trading_calendar import CalendarError, infer_market
+
 logger = logging.getLogger(__name__)
 
 
@@ -48,19 +50,41 @@ class HistoricalDataFeed(BaseDataFeed):
     整合DataManager获取历史数据进行回测
     """
     
-    def __init__(self, data_manager=None, allow_mock: bool = True):
+    def __init__(self, data_manager=None, allow_mock: bool = True, calendar=None):
         """
         初始化历史数据源
         
         Args:
             data_manager: DataManager实例，如果为None则创建mock数据
             allow_mock: 未配置 data_manager 时是否允许回落模拟数据
+            calendar: TradingCalendar 实例；未显式传入时从 data_manager 懒获取
         """
         self.data_manager = data_manager
         self.allow_mock = allow_mock
         self.used_mock = False
         self.failed_symbols = 0
         self._cache: Dict[str, pd.DataFrame] = {}
+        self._calendar = calendar
+        self._calendar_resolved = calendar is not None
+        self._calendar_error: Optional[Exception] = None
+
+    def _get_calendar(self):
+        """懒解析日历：构造 DataFeed 时不触发任何日历创建或 futu 请求。
+
+        data_manager 没有日历入口（旧路径）→ None；
+        入口存在但抛异常 → 记录 _calendar_error，真实路径必须显式失败。
+        """
+        if not self._calendar_resolved:
+            self._calendar_resolved = True
+            getter = getattr(self.data_manager, "get_trading_calendar", None)
+            if callable(getter):
+                try:
+                    self._calendar = getter()
+                except Exception as exc:  # noqa: BLE001 - 真实路径由调用方按 error 抛出
+                    logger.warning("获取交易日历失败: %s", exc)
+                    self._calendar = None
+                    self._calendar_error = exc
+        return self._calendar
     
     async def get_data(self, 
                        symbols: List[str], 
@@ -140,7 +164,7 @@ class HistoricalDataFeed(BaseDataFeed):
         end = pd.to_datetime(end_date)
         
         if frequency == 'daily':
-            dates = pd.date_range(start=start, end=end, freq='B')
+            dates = self._mock_daily_dates(symbols, start, end)
         elif frequency == 'weekly':
             dates = pd.date_range(start=start, end=end, freq='W')
         elif frequency == 'monthly':
@@ -173,6 +197,28 @@ class HistoricalDataFeed(BaseDataFeed):
             result[symbol] = df
         
         return result
+
+    def _mock_daily_dates(self, symbols: List[str], start, end) -> pd.DatetimeIndex:
+        """mock 日线日轴：单市场且日历可用时走日历，其余回工作日并 WARNING。"""
+        calendar = self._get_calendar()
+        if calendar is None:
+            if self._calendar_error is not None:
+                logger.warning(
+                    "mock 日线日历不可用，回退工作日 freq='B': %s", self._calendar_error
+                )
+            else:
+                logger.warning("未配置日历，mock 日线回退工作日 freq='B'")
+            return pd.date_range(start=start, end=end, freq='B')
+
+        market = infer_market(symbols)
+        if market is None:
+            logger.warning("mock 日线无法推断唯一市场，回退工作日 freq='B'")
+        else:
+            try:
+                return calendar.get_trading_days(market, start, end)
+            except CalendarError as exc:
+                logger.warning("mock 日线读取交易日历失败，回退工作日: %s", exc)
+        return pd.date_range(start=start, end=end, freq='B')
     
     def get_symbols(self) -> List[str]:
         """获取所有可用股票代码"""
@@ -252,16 +298,25 @@ class HistoricalDataFeed(BaseDataFeed):
         
         return returns.dropna()
     
-    def get_trading_dates(self, start_date: str, end_date: str) -> pd.DatetimeIndex:
+    def get_trading_dates(self, start_date: str, end_date: str, market: str = "hk") -> pd.DatetimeIndex:
         """
         获取交易日列表
         
         Args:
             start_date: 开始日期
             end_date: 结束日期
+            market: 市场（HK/US/CN），默认 hk；必须由调用方按标的市场显式传入，
+                默认值仅用于兼容旧的两参数调用
             
         Returns:
             交易日索引
         """
-        dates = pd.date_range(start=start_date, end=end_date, freq='B')
-        return dates
+        calendar = self._get_calendar()
+        if calendar is not None:
+            # 日历异常原样抛出，不回工作日
+            return calendar.get_trading_days(market, start_date, end_date)
+        if self._calendar_error is not None:
+            raise self._calendar_error
+
+        logger.warning("未配置交易日历，回退工作日 freq='B'")
+        return pd.date_range(start=start_date, end=end_date, freq='B')

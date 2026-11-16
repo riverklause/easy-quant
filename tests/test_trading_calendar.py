@@ -17,6 +17,7 @@ import pandas as pd
 import pytest
 
 from data.sources.futu_client import FutuAPIClient
+from backtest.datafeed.historical_datafeed import HistoricalDataFeed
 from utils.trading_calendar import (
     CalendarFutureUnavailable,
     CalendarOutOfRange,
@@ -24,6 +25,7 @@ from utils.trading_calendar import (
     CalendarUnavailable,
     RateLimiter,
     TradingCalendar,
+    infer_market,
     normalize_market,
     normalize_trading_days_payload,
 )
@@ -763,3 +765,472 @@ def test_CAL_40_weekend_calendar_frame_no_request(tmp_path):
     frame = cal.get_calendar_frame("HK", "2026-11-14", "2026-11-15")
     assert frame.empty
     assert client.calls == []
+
+
+# --------------------------------------------------------------------------- #
+# P1a：DataManager 注入（日历实例、缓存目录、缓存命中、无 client）
+# --------------------------------------------------------------------------- #
+def _make_data_manager(tmp_path, monkeypatch, client=None, cache_name="cache"):
+    from data.data_manager import DataManager
+    from utils.settings import settings
+
+    monkeypatch.setattr(settings.data, "cache_dir", tmp_path / cache_name)
+    monkeypatch.setattr(settings.data, "data_dir", tmp_path / "data")
+    dm = DataManager(
+        config={
+            "futu": {},
+            "yfinance": {},
+            "available_data_sources": {"available_data_sources": []},
+        }
+    )
+    if client is not None:
+        dm.clients["futu"] = client
+    return dm
+
+
+def test_P1A_1_calendar_created_once_with_injected_paths(tmp_path, monkeypatch):
+    client = FakeClient({"HK": weekdays("2024-03-01", "2024-03-29")})
+    dm = _make_data_manager(tmp_path, monkeypatch, client)
+
+    cal = dm.get_trading_calendar()
+    assert dm.get_trading_calendar() is cal
+    assert cal.client is client
+    assert cal.cache_dir == tmp_path / "cache" / "trading_calendar"
+    assert cal.overrides_dir == tmp_path / "data" / "calendars"
+    assert cal.rate_limiter is dm._calendar_rate_limiter
+
+
+def test_P1A_2_cache_hit_makes_no_futu_calls(tmp_path, monkeypatch):
+    days = weekdays("2024-03-01", "2024-03-29")
+    client = FakeClient({"HK": days})
+    dm = _make_data_manager(tmp_path, monkeypatch, client)
+
+    first = dm.get_trading_days("HK", "2024-03-01", "2024-03-29")
+    assert set(first.date) == days
+    calls_after_first = len(client.calls)
+
+    # 同一实例：内存缓存
+    dm.get_trading_days("HK", "2024-03-01", "2024-03-29")
+    assert len(client.calls) == calls_after_first
+
+    # 新实例：跨实例读盘缓存，仍然零请求
+    dm2 = _make_data_manager(tmp_path, monkeypatch, client)
+    second = dm2.get_trading_days("HK", "2024-03-01", "2024-03-29")
+    assert list(second) == list(first)
+    assert len(client.calls) == calls_after_first
+
+
+def test_P1A_3_no_client_reads_cache_and_fails_closed(tmp_path, monkeypatch):
+    days = weekdays("2024-03-01", "2024-03-29")
+    seeded = _make_data_manager(
+        tmp_path, monkeypatch, FakeClient({"HK": days})
+    )
+    expected = seeded.get_trading_days("HK", "2024-03-01", "2024-03-29")
+
+    # 缓存已覆盖：没有 futu client 也能读
+    no_client = _make_data_manager(tmp_path, monkeypatch)
+    assert list(no_client.get_trading_days("HK", "2024-03-01", "2024-03-29")) == list(expected)
+
+    # 缓存缺失：显式失败，不按工作日兜底
+    empty = _make_data_manager(tmp_path, monkeypatch, cache_name="empty_cache")
+    with pytest.raises(CalendarUnavailable):
+        empty.get_trading_days("HK", "2024-03-01", "2024-03-29")
+
+
+def test_P1A_4_new_without_init_is_supported(tmp_path, monkeypatch):
+    from data.data_manager import DataManager
+    from utils.settings import settings
+
+    monkeypatch.setattr(settings.data, "cache_dir", tmp_path / "cache")
+    monkeypatch.setattr(settings.data, "data_dir", tmp_path / "data")
+    dm = DataManager.__new__(DataManager)
+    dm.clients = {}
+
+    cal = dm.get_trading_calendar()
+    assert dm.get_trading_calendar() is cal
+    assert cal.client is None
+
+
+# --------------------------------------------------------------------------- #
+# P1b：infer_market 与 HistoricalDataFeed 接入日历
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize(
+    "symbol,market",
+    [
+        ("HK.00700", "HK"),
+        ("0700.HK", "HK"),
+        ("US.AAPL", "US"),
+        ("AAPL", "US"),
+        ("AAPL.US", "US"),
+        ("SH.600000", "CN"),
+        ("SZ.000001", "CN"),
+        ("600000.SS", "CN"),
+        ("000001.SZ", "CN"),
+        ("BJ.430047", None),
+        ("430047.BJ", None),
+        ("", None),
+        ("   ", None),
+        (None, None),
+        ("XYZ.ABC", None),
+    ],
+)
+def test_P1B_1_infer_market(symbol, market):
+    assert infer_market(symbol) == market
+
+
+def test_P1B_1b_infer_market_requires_unique_market():
+    assert infer_market(["HK.00700", "HK.00981"]) == "HK"
+    assert infer_market(["HK.00700", "US.AAPL"]) is None
+    assert infer_market(["HK.00700", "XYZ.ABC"]) is None
+    assert infer_market([]) is None
+
+
+class _FakeCalendar:
+    def __init__(self, days=None, error: Exception | None = None) -> None:
+        self.days = list(days or [])
+        self.error = error
+        self.calls: list[tuple[str, str, str]] = []
+
+    def get_trading_days(self, market, start=None, end=None, refresh=False):
+        self.calls.append((market, start, end))
+        if self.error:
+            raise self.error
+        return pd.DatetimeIndex(self.days)
+
+
+class _FakeDataManager:
+    """只提供日历入口，并记录是否在构造 DataFeed 时被调用。"""
+
+    def __init__(self, calendar) -> None:
+        self.calendar = calendar
+        self.calendar_calls = 0
+
+    def get_trading_calendar(self):
+        self.calendar_calls += 1
+        return self.calendar
+
+
+def _mock_business_days(start: str, end: str) -> list:
+    return list(pd.date_range(start=start, end=end, freq="B"))
+
+
+def test_P1B_2_trading_dates_use_calendar():
+    days = [pd.Timestamp("2024-01-02"), pd.Timestamp("2024-01-03")]
+    cal = _FakeCalendar(days)
+    dm = _FakeDataManager(cal)
+
+    feed = HistoricalDataFeed(data_manager=dm)
+    assert dm.calendar_calls == 0, "构造 DataFeed 不应触发日历解析"
+
+    got = feed.get_trading_dates("2024-01-01", "2024-01-05", market="HK")
+    assert list(got) == days
+    assert cal.calls == [("HK", "2024-01-01", "2024-01-05")]
+
+    # 懒解析只做一次
+    feed.get_trading_dates("2024-01-01", "2024-01-05", market="HK")
+    assert dm.calendar_calls == 1
+
+
+def test_P1B_3_calendar_error_propagates():
+    cal = _FakeCalendar(error=CalendarUnavailable("down"))
+    feed = HistoricalDataFeed(data_manager=_FakeDataManager(cal))
+
+    with pytest.raises(CalendarUnavailable):
+        feed.get_trading_dates("2024-01-01", "2024-01-05", market="HK")
+
+
+def test_P1B_4_no_calendar_falls_back_with_warning(caplog):
+    feed = HistoricalDataFeed()
+
+    with caplog.at_level(
+        logging.WARNING, logger="backtest.datafeed.historical_datafeed"
+    ):
+        dates = feed.get_trading_dates("2024-01-01", "2024-01-07")
+
+    assert list(dates) == _mock_business_days("2024-01-01", "2024-01-07")
+    assert "回退工作日" in caplog.text
+
+
+def test_P1B_5_mock_single_market_uses_calendar():
+    days = [pd.Timestamp("2024-01-02"), pd.Timestamp("2024-01-03")]
+    cal = _FakeCalendar(days)
+    feed = HistoricalDataFeed(data_manager=_FakeDataManager(cal))
+
+    data = feed._generate_mock_data(
+        ["HK.00700", "HK.00981"], "2024-01-01", "2024-01-05", "daily"
+    )
+
+    assert len(cal.calls) == 1
+    assert cal.calls[0][0] == "HK"
+    assert pd.Timestamp(cal.calls[0][1]) == pd.Timestamp("2024-01-01")
+    assert pd.Timestamp(cal.calls[0][2]) == pd.Timestamp("2024-01-05")
+    assert all(len(frame) == len(days) for frame in data.values())
+
+
+@pytest.mark.parametrize(
+    "symbols",
+    [
+        ["HK.00700", "US.AAPL"],  # 跨市场
+        ["XYZ.ABC"],  # 无法识别
+        ["BJ.430047"],  # 北交所本期不支持
+    ],
+)
+def test_P1B_6_mock_multi_or_unknown_market_falls_back(symbols, caplog):
+    cal = _FakeCalendar([pd.Timestamp("2024-01-02")])
+    feed = HistoricalDataFeed(data_manager=_FakeDataManager(cal))
+
+    with caplog.at_level(
+        logging.WARNING, logger="backtest.datafeed.historical_datafeed"
+    ):
+        data = feed._generate_mock_data(
+            symbols, "2024-01-01", "2024-01-07", "daily"
+        )
+
+    assert cal.calls == []
+    assert len(data[symbols[0]]) == len(_mock_business_days("2024-01-01", "2024-01-07"))
+    assert "回退工作日" in caplog.text
+
+
+def test_P1B_7_mock_calendar_error_falls_back(caplog):
+    cal = _FakeCalendar(error=CalendarUnavailable("down"))
+    feed = HistoricalDataFeed(data_manager=_FakeDataManager(cal))
+
+    with caplog.at_level(
+        logging.WARNING, logger="backtest.datafeed.historical_datafeed"
+    ):
+        data = feed._generate_mock_data(
+            ["HK.00700"], "2024-01-01", "2024-01-07", "daily"
+        )
+
+    assert len(data["HK.00700"]) == len(_mock_business_days("2024-01-01", "2024-01-07"))
+    assert "回退工作日" in caplog.text
+
+
+class _BrokenDataManager:
+    """日历入口存在但构造失败，用于验证真实路径不得降级。"""
+
+    def get_trading_calendar(self):
+        raise RuntimeError("calendar init failed")
+
+
+def test_P1B_8_calendar_init_error_fails_real_path():
+    feed = HistoricalDataFeed(data_manager=_BrokenDataManager())
+
+    with pytest.raises(RuntimeError, match="calendar init failed"):
+        feed.get_trading_dates("2024-01-01", "2024-01-05", market="HK")
+
+
+def test_P1B_8b_mock_calendar_init_error_falls_back(caplog):
+    feed = HistoricalDataFeed(data_manager=_BrokenDataManager())
+
+    with caplog.at_level(
+        logging.WARNING, logger="backtest.datafeed.historical_datafeed"
+    ):
+        data = feed._generate_mock_data(
+            ["HK.00700"], "2024-01-01", "2024-01-07", "daily"
+        )
+
+    assert len(data["HK.00700"]) == len(_mock_business_days("2024-01-01", "2024-01-07"))
+    assert "回退工作日" in caplog.text
+
+
+# --------------------------------------------------------------------------- #
+# P1c：实时落盘的 session date
+# --------------------------------------------------------------------------- #
+SHANGHAI = ZoneInfo("Asia/Shanghai")
+
+
+class _ShanghaiMorning(datetime):
+    """把 now() 固定在上海早上 8 点，用于验证美股 session date。"""
+
+    @classmethod
+    def now(cls, tz=None):
+        fixed = datetime(2026, 11, 17, 8, 0, tzinfo=SHANGHAI)
+        return fixed if tz is None else fixed.astimezone(tz)
+
+
+class _FakeStorage:
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+
+    def save_data(self, **kwargs):
+        self.calls.append(kwargs)
+        return True
+
+
+class _BrokenCalendar:
+    def session_date(self, value, market):
+        return date(2026, 11, 16)
+
+    def is_trading_day(self, day, market):
+        raise CalendarUnavailable("down")
+
+
+def _quote_frame(symbol: str) -> pd.DataFrame:
+    return pd.DataFrame(
+        {"code": [symbol], "price": [1.0], "time_key": ["2026-11-16 10:00:00"]}
+    )
+
+
+def _realtime_manager(calendar, cache=None):
+    from data.data_manager import DataManager
+
+    dm = DataManager.__new__(DataManager)
+    dm._trading_calendar = calendar
+    dm._calendar_rate_limiter = NoopLimiter()
+    dm.realtime_cache = cache if cache is not None else {"quote": {}}
+    dm.storage_manager = _FakeStorage()
+    return dm
+
+
+def _us_calendar(tmp_path, holidays=()):
+    days = weekdays("2026-11-01", "2026-11-30") - set(holidays)
+    return make_cal(tmp_path, FakeClient({"US": days}))
+
+
+def test_P1C_1_us_session_date_from_shanghai_morning(tmp_path, monkeypatch):
+    cal = _us_calendar(tmp_path)
+    dm = _realtime_manager(
+        cal, {"quote": {"US.AAPL": _quote_frame("US.AAPL")}}
+    )
+    monkeypatch.setattr("data.data_manager.datetime", _ShanghaiMorning)
+
+    assert dm.save_realtime_data_to_local("quote", symbol="US.AAPL") is True
+    saved = dm.storage_manager.calls[0]
+    # 上海 11-17 08:00 = 纽约 11-16 19:00，session date 是 11-16
+    assert saved["start_date"] == "2026-11-16"
+    assert saved["end_date"] == "2026-11-16"
+
+
+def test_P1C_2_non_trading_day_is_not_saved(tmp_path):
+    cal = _us_calendar(tmp_path, holidays=[date(2026, 11, 26)])
+    dm = _realtime_manager(
+        cal, {"quote": {"US.AAPL": _quote_frame("US.AAPL")}}
+    )
+
+    assert (
+        dm.save_realtime_data_to_local(
+            "quote", symbol="US.AAPL", trading_day="2026-11-21"
+        )
+        is False
+    )
+    assert (
+        dm.save_realtime_data_to_local(
+            "quote", symbol="US.AAPL", trading_day="2026-11-26"
+        )
+        is False
+    )
+    assert dm.storage_manager.calls == []
+
+
+def test_P1C_3_aggregated_single_market_is_inferred(tmp_path, monkeypatch):
+    cal = _us_calendar(tmp_path)
+    dm = _realtime_manager(
+        cal,
+        {
+            "quote": {
+                "US.AAPL": _quote_frame("US.AAPL"),
+                "US.MSFT": _quote_frame("US.MSFT"),
+            }
+        },
+    )
+    monkeypatch.setattr("data.data_manager.datetime", _ShanghaiMorning)
+
+    assert dm.save_realtime_data_to_local("quote") is True
+    saved = dm.storage_manager.calls[0]
+    assert saved["symbol"] == "ALL"
+    assert saved["start_date"] == "2026-11-16"
+
+
+@pytest.mark.parametrize(
+    "cache",
+    [
+        {
+            "US.AAPL": _quote_frame("US.AAPL"),
+            "HK.00700": _quote_frame("HK.00700"),
+        },
+        {"XYZ.ABC": _quote_frame("XYZ.ABC")},
+    ],
+)
+def test_P1C_3b_aggregated_mixed_or_unknown_market_fails(cache, caplog):
+    dm = _realtime_manager(_FakeCalendar(), {"quote": cache})
+
+    with caplog.at_level(logging.WARNING, logger="data.data_manager"):
+        assert dm.save_realtime_data_to_local("quote") is False
+
+    assert dm.storage_manager.calls == []
+    assert "无法确定" in caplog.text
+
+
+def test_P1C_3c_explicit_market_conflict_fails(caplog):
+    dm = _realtime_manager(
+        _FakeCalendar(),
+        {"quote": {"US.AAPL": _quote_frame("US.AAPL")}},
+    )
+
+    with caplog.at_level(logging.WARNING, logger="data.data_manager"):
+        assert (
+            dm.save_realtime_data_to_local("quote", symbol="US.AAPL", market="HK")
+            is False
+        )
+
+    assert dm.storage_manager.calls == []
+    assert "冲突" in caplog.text
+
+
+def test_P1C_3d_aggregated_explicit_market_conflict_fails(caplog):
+    dm = _realtime_manager(
+        _FakeCalendar(),
+        {"quote": {"US.AAPL": _quote_frame("US.AAPL")}},
+    )
+
+    with caplog.at_level(logging.WARNING, logger="data.data_manager"):
+        assert dm.save_realtime_data_to_local("quote", market="HK") is False
+
+    assert dm.storage_manager.calls == []
+    assert "冲突" in caplog.text
+
+
+def test_P1C_3e_aggregated_mixed_cache_with_explicit_market_fails(caplog):
+    dm = _realtime_manager(
+        _FakeCalendar(),
+        {
+            "quote": {
+                "US.AAPL": _quote_frame("US.AAPL"),
+                "HK.00700": _quote_frame("HK.00700"),
+            }
+        },
+    )
+
+    with caplog.at_level(logging.WARNING, logger="data.data_manager"):
+        assert dm.save_realtime_data_to_local("quote", market="US") is False
+
+    assert dm.storage_manager.calls == []
+    assert "无法确认" in caplog.text
+
+
+def test_P1C_3f_aggregated_explicit_market_matches_cache(tmp_path, monkeypatch):
+    cal = _us_calendar(tmp_path)
+    dm = _realtime_manager(
+        cal, {"quote": {"US.AAPL": _quote_frame("US.AAPL")}}
+    )
+    monkeypatch.setattr("data.data_manager.datetime", _ShanghaiMorning)
+
+    assert dm.save_realtime_data_to_local("quote", market="US") is True
+    saved = dm.storage_manager.calls[0]
+    assert saved["start_date"] == "2026-11-16"
+
+
+def test_P1C_5_calendar_unavailable_fails_closed():
+    dm = _realtime_manager(
+        _BrokenCalendar(),
+        {"quote": {"US.AAPL": _quote_frame("US.AAPL")}},
+    )
+
+    assert (
+        dm.save_realtime_data_to_local(
+            "quote", symbol="US.AAPL", trading_day="2026-11-16"
+        )
+        is False
+    )
+    assert dm.storage_manager.calls == []

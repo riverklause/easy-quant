@@ -3,6 +3,7 @@
 """
 from typing import Dict, List, Optional, Any, Union, Callable
 from datetime import datetime, timedelta
+from pathlib import Path
 import pandas as pd
 import asyncio
 import logging
@@ -15,6 +16,13 @@ from .storage.local_storage import LocalStorageManager
 from .base_client import BaseDataSourceClient
 from utils.symbol_utils import convert_symbol_format,convert_symbols_format, validate_symbol_format, validate_symbols_format
 from utils.settings import settings
+from utils.trading_calendar import (
+    CalendarError,
+    RateLimiter,
+    TradingCalendar,
+    infer_market,
+    normalize_market,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +58,10 @@ class DataManager:
             data_dir=str(settings.data.data_dir),
             cache_dir=str(settings.data.cache_dir)
         )
+
+        # 交易日历懒创建；rate limiter 在同一个 DataManager 内共享
+        self._trading_calendar: Optional[TradingCalendar] = None
+        self._calendar_rate_limiter = RateLimiter()
         
         # 初始化实时数据内存缓存（每个symbol一个大DataFrame，手动限制行数）
         self.realtime_cache: Dict[str, Dict[str, pd.DataFrame]] = {}
@@ -192,6 +204,43 @@ class DataManager:
         except Exception:
             logger.exception("断开数据源连接失败")
             return False
+
+    def get_trading_calendar(self) -> TradingCalendar:
+        """获取交易日历（懒创建，同一个 DataManager 内只创建一次）。
+
+        日历持有 client 引用而非连接快照：connect_all() 之后再创建或复用，
+        都能拿到当前 client。
+        """
+        calendar = getattr(self, "_trading_calendar", None)
+        if calendar is not None:
+            return calendar
+
+        # 兼容 DataManager.__new__(DataManager) 的测试路径，不假设字段已存在
+        limiter = getattr(self, "_calendar_rate_limiter", None)
+        if limiter is None:
+            limiter = RateLimiter()
+            self._calendar_rate_limiter = limiter
+
+        calendar = TradingCalendar(
+            client=(getattr(self, "clients", None) or {}).get("futu"),
+            cache_dir=Path(settings.data.cache_dir) / "trading_calendar",
+            overrides_dir=Path(settings.data.data_dir) / "calendars",
+            rate_limiter=limiter,
+        )
+        self._trading_calendar = calendar
+        return calendar
+
+    def get_trading_days(
+        self,
+        market: str,
+        start: Any = None,
+        end: Any = None,
+        refresh: bool = False,
+    ) -> pd.DatetimeIndex:
+        """获取交易日（透传 TradingCalendar，保持同步接口）。"""
+        return self.get_trading_calendar().get_trading_days(
+            market, start, end, refresh=refresh
+        )
     
     async def get_historical_data(
         self, 
@@ -531,44 +580,126 @@ class DataManager:
         else:
             return {k:{sk:sv for sk,sv in v.items() if sk in data_types} for k,v in self.lastest_data.items()}
     
-    def save_realtime_data_to_local(self, data_type: str, symbol: Optional[str] = None, trading_day: Optional[str] = None):
+    def save_realtime_data_to_local(
+        self,
+        data_type: str,
+        symbol: Optional[str] = None,
+        trading_day: Optional[str] = None,
+        market: Optional[str] = None,
+    ):
         """
         将实时数据保存到本地文件
         
         Args:
             data_type: 数据类型 ('quote', 'order_book', 'time_share', 'broker', 'kline', 'ticker')
             symbol: 股票代码，用于kline和ticker类型 
-            trading_day: 交易日，格式：YYYY-MM-DD
+            trading_day: 交易日，格式：YYYY-MM-DD；缺省按市场 session date 计算
+            market: 市场（HK/US/CN）；缺省从 symbol 或缓存 key 推断
             
         Returns:
             是否保存成功
         """
-        import pandas as pd
-        from datetime import datetime
-        
-        # 获取实时数据
         realtime_data = self.get_realtime_data(data_type, symbol)
-        if not realtime_data:
-            return False
-        
-        # 转换为DataFrame
-        df = pd.DataFrame(realtime_data)
+        df = (
+            realtime_data
+            if isinstance(realtime_data, pd.DataFrame)
+            else pd.DataFrame(realtime_data)
+        )
         if df.empty:
+            logger.warning("实时数据为空，跳过落盘: %s %s", data_type, symbol)
             return False
-        
-        # 确定交易日
-        if not trading_day:
-            trading_day = datetime.now().strftime('%Y-%m-%d')
-        
-        # 保存数据
+
+        resolved_market = self._resolve_realtime_market(data_type, symbol, market)
+        if resolved_market is None:
+            logger.warning(
+                "无法确定 %s %s 的市场，拒绝落盘；请显式传入 market",
+                data_type,
+                symbol or "ALL",
+            )
+            return False
+
+        try:
+            calendar = self.get_trading_calendar()
+        except Exception as exc:  # noqa: BLE001 - 日历不可用一律不落盘
+            logger.warning("[%s] 交易日历不可用，拒绝落盘 %s: %s", resolved_market, data_type, exc)
+            return False
+
+        try:
+            if trading_day:
+                day = datetime.strptime(trading_day, "%Y-%m-%d").date()
+            else:
+                day = calendar.session_date(datetime.now().astimezone(), resolved_market)
+            if not calendar.is_trading_day(day, resolved_market):
+                logger.warning(
+                    "[%s] %s 不是交易日，拒绝落盘 %s", resolved_market, day, data_type
+                )
+                return False
+        except CalendarError as exc:
+            logger.warning("[%s] 交易日历不可用，拒绝落盘 %s: %s", resolved_market, data_type, exc)
+            return False
+        except ValueError as exc:
+            logger.warning("实时数据落盘日期解析失败: %s", exc)
+            return False
+
         return self.storage_manager.save_data(
             data=df,
             symbol=symbol or 'ALL',
             data_type=f'realtime_{data_type}',
-            start_date=trading_day,
-            end_date=trading_day,
+            start_date=day.isoformat(),
+            end_date=day.isoformat(),
             source='futu'
         )
+
+    def _resolve_realtime_market(
+        self,
+        data_type: str,
+        symbol: Optional[str],
+        market: Optional[str],
+    ) -> Optional[str]:
+        """解析实时数据所属市场：显式 market → symbol → 缓存 key 集合。"""
+        explicit: Optional[str] = None
+        if market:
+            try:
+                explicit = normalize_market(market)
+            except ValueError as exc:
+                logger.warning("非法 market 参数: %s", exc)
+                return None
+
+        if symbol:
+            inferred = infer_market(symbol)
+            if explicit and inferred and inferred != explicit:
+                logger.warning(
+                    "symbol %s 推断为 %s，与显式 market=%s 冲突",
+                    symbol,
+                    inferred,
+                    explicit,
+                )
+                return None
+            return explicit or inferred
+
+        # symbol 为空：缓存 key 是聚合数据的事实来源，显式 market 只能用于校验，
+        # 不能覆盖缓存事实，否则会把美股数据按港股日期落盘。
+        keys = list(self.realtime_cache.get(data_type, {}).keys())
+        cached = infer_market(keys)
+        if explicit:
+            if keys:
+                if cached is None:
+                    logger.warning(
+                        "缓存 %s 的市场混合或无法识别，显式 market=%s 无法确认，拒绝落盘",
+                        data_type,
+                        explicit,
+                    )
+                    return None
+                if cached != explicit:
+                    logger.warning(
+                        "缓存 %s 推断为 %s，与显式 market=%s 冲突",
+                        data_type,
+                        cached,
+                        explicit,
+                    )
+                    return None
+            return explicit
+        return cached
     
     def cleanup_old_realtime_data(self, days: int = 15):
         """

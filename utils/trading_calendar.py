@@ -112,6 +112,67 @@ def market_timezone(market: str) -> ZoneInfo:
     return ZoneInfo(MARKET_TIMEZONES[normalize_market(market)])
 
 
+# futu 前缀 / yfinance 后缀 → 市场；BJ 明确返回 None（本期不支持北交所）
+_SYMBOL_PREFIX_MARKETS: Dict[str, Optional[str]] = {
+    "HK": "HK",
+    "US": "US",
+    "SH": "CN",
+    "SZ": "CN",
+    "CN": "CN",
+    "BJ": None,
+}
+_SYMBOL_SUFFIX_MARKETS: Dict[str, Optional[str]] = {
+    "HK": "HK",
+    "US": "US",
+    "SS": "CN",
+    "SH": "CN",
+    "SZ": "CN",
+    "CN": "CN",
+    "BJ": None,
+}
+
+
+def _infer_one_market(symbol: Any) -> Optional[str]:
+    if not isinstance(symbol, str):
+        return None
+    text = symbol.strip().upper()
+    if not text:
+        return None
+    if "." in text:
+        head, tail = text.split(".", 1)
+        if head in _SYMBOL_PREFIX_MARKETS:
+            return _SYMBOL_PREFIX_MARKETS[head]
+        if tail in _SYMBOL_SUFFIX_MARKETS:
+            return _SYMBOL_SUFFIX_MARKETS[tail]
+        return None
+    # 裸代码只认纯字母美股；数字裸代码无法区分沪/深，按未知处理
+    return "US" if text.isalpha() else None
+
+
+def infer_market(symbol: Any) -> Optional[str]:
+    """从股票代码推断市场；无法唯一确定（含北交所、跨市场）返回 None。
+
+    支持 futu 前缀（HK.00700 / US.AAPL / SH.600000 / SZ.000001）、
+    yfinance 后缀（0700.HK / 600000.SS / 000001.SZ）与裸美股代码（AAPL）。
+    传入可迭代对象时，仅当所有代码同属一个市场才返回该市场。
+    """
+    if symbol is None:
+        return None
+    if isinstance(symbol, str):
+        return _infer_one_market(symbol)
+    try:
+        symbols = list(symbol)
+    except TypeError:
+        return None
+    if not symbols:
+        return None
+
+    markets = {_infer_one_market(item) for item in symbols}
+    if len(markets) == 1:
+        return markets.pop()
+    return None
+
+
 def _minus_years(day: date, years: int) -> date:
     try:
         return day.replace(year=day.year - years)

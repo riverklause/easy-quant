@@ -80,7 +80,8 @@ async def main():
         if data_type in ['kline', 'tick']:
             saved = data_manager.save_realtime_data_to_local(data_type, symbol='US.AAPL')
         else:
-            saved = data_manager.save_realtime_data_to_local(data_type)
+            # 聚合数据无法从 symbol 推断市场，必须显式指定
+            saved = data_manager.save_realtime_data_to_local(data_type, market='US')
         status = "成功" if saved else "失败"
         print(f"   ✅ 保存{data_type}数据到本地: {status}")
     
