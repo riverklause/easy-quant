@@ -1,6 +1,6 @@
 # 交易日历设计
 
-> 状态：P0–P3 已封版（能力层 + 接入 + 回测过滤 + 半天市/展示；CAL-01～31 测试）
+> 状态：P0–P4 已封版（能力层 + 接入 + 回测过滤 + 半天市/展示 + Web 预热/门控；CAL-01～35 测试）
 > 最后更新：2026-11-16
 > 适用范围：港股（HK）、美股（US）、A 股（仅 SH/SZ，不含北交所）
 
@@ -360,6 +360,8 @@ OpenD 可用时，用下列日期查一次 `trade_date_type`：
 - 页面与定时任务统一走 `DataManager.get_trading_calendar()`。
 - 捕获 `CalendarUnavailable` / `CalendarOutOfRange` / `CalendarFutureUnavailable` / `CalendarRateLimited`，展示「交易日历不可用」或「跨年日历未发布」，不崩溃、不静默降级。
 - 首页「交易日历状态」卡片（`web/pages/home.py` 的 `build_calendar_status`）按 HK / US / CN 分别展示：交易日/盘中、交易日/非盘中、今日休市、交易日历不可用、跨年日历未发布；日历未初始化与未知异常也只展示提示，不影响页面其余部分。
+- 共享组件在 `web/calendar_status.py`：`build_calendar_status` 供首页与 `/monitor` 复用，`build_runtime_status` 展示预热/盘前刷新结果与实时循环 off-session 计数。
+- `/monitor` 使用独立的 30 秒 interval 刷新日历面板，不与现有 2 秒监控轮询绑定；数据来源是 `web/calendar_runtime.py` 的进程内快照。
 - 实时落盘遇到日历不可用直接拒绝落盘并 WARNING（见 §11.1），不使用工作日兜底。
 
 ## 12. 测试计划
@@ -399,6 +401,10 @@ OpenD 可用时，用下列日期查一次 `trade_date_type`：
 | CAL-29 | 未来负缓存：`future_probe_at` TTL 内重复查询未来工作日不再请求 futu，直接抛 `CalendarFutureUnavailable`；`refresh=True` 或 TTL 过期后重新探测 |
 | CAL-30 | 纯周末区间（周六至周日）→ 返回空结果，不触发请求 |
 | CAL-31 | Web 首页日历状态：四类日历异常分别展示「交易日历不可用」/「跨年日历未发布」；未初始化与未知异常不崩溃 |
+| CAL-32 | 启动预热：单市场失败只 WARNING，不影响其他市场，也不阻塞 Web 启动 |
+| CAL-33 | 盘前刷新：同一市场同一交易日最多 `refresh` 一次，失败不风暴重试 |
+| CAL-34 | 实时门控：休市标的跳过并计入 `skipped_off_session`，不计为指标失败；日历异常 fail-closed 且 `stopped_reason` 非空 |
+| CAL-35 | `/monitor` 日历状态：四类异常均有可见提示，预热/刷新结果可展示；实时任务未接入 `status_sink` 时明确显示「未运行」，不展示伪造的 off-session 计数 |
 
 ## 13. 实施阶段
 
@@ -432,6 +438,17 @@ OpenD 可用时，用下列日期查一次 `trade_date_type`：
 - Web 不可用状态（已完成，首页日历状态卡片，CAL-31）。
 
 验收：港股半日、美股提前收市、A 股午休三组时段测试通过；Web 端四类异常均有可见状态。
+
+### P4：接入收尾
+
+已完成：
+
+- **启动预热**：`init_data_sources` 成功后由后台线程按市场调用 `get_trading_days`（cache-first + TTL，不用 `prewarm` 强制回源），区间为当前自然年 `01-01 ~ 12-31`；单市场失败只 WARNING，不阻塞 Web 启动。debug reloader 只在 `WERKZEUG_RUN_MAIN=true` 的子进程启动，避免双份任务。
+- **盘前刷新**：交易日 `[09:00, 09:30)`（市场本地时间）内对当日开市的市场 `refresh(market, today, today)` 一次；先记「今日已尝试」再刷新，失败当天不重试。
+- **实时门控**：`_realtime_tick` 按标的市场过滤，休市/非交易时段标的不进入指标计算与策略信号，计入 `skipped_off_session` / `last_tick_skipped`；日历异常 fail-closed，`CalendarFutureUnavailable` 记录「跨年日历未发布，请次年 1 月 1 日后重试」，其他 `CalendarError` 记录「交易日历不可用，实时循环已停止」。
+- **监控展示**：`/monitor` 复用共享组件，展示日历状态、预热/刷新结果；实时循环统计通过可选 `status_sink` 写入 `web/calendar_runtime.py`。当前 Web 进程没有实时 executor，未接入 sink 时明确显示「实时任务 未运行」，不伪造 off-session 计数。
+
+验收：重启 Web 不阻塞且单市场日历失败可见；盘前刷新每日一次；混合市场实时循环只跳过休市标的；日历异常停止原因非空；`/monitor` 在无实时任务时显示「未运行」。
 
 ## 14. 运维约束
 

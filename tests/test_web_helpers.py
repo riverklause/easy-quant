@@ -116,7 +116,7 @@ def test_W8_calendar_status_shows_unavailable_instead_of_crashing(caplog):
     """四类日历异常都必须变成可见提示：不崩溃、不静默降级。"""
     import logging
 
-    from web.pages import home
+    from web.calendar_status import build_calendar_status
     from utils.trading_calendar import (
         CalendarFutureUnavailable,
         CalendarRateLimited,
@@ -125,7 +125,7 @@ def test_W8_calendar_status_shows_unavailable_instead_of_crashing(caplog):
 
     markets = (("HK", "港股"),)
 
-    assert "尚未初始化" in str(home.build_calendar_status(None, markets=markets))
+    assert "尚未初始化" in str(build_calendar_status(None, markets=markets))
 
     class _RaisingCalendar:
         def __init__(self, exc):
@@ -139,12 +139,12 @@ def test_W8_calendar_status_shows_unavailable_instead_of_crashing(caplog):
         (CalendarRateLimited("请求超限"), "交易日历不可用"),
         (CalendarFutureUnavailable("跨年未发布"), "跨年日历未发布"),
     ):
-        component = home.build_calendar_status(_RaisingCalendar(exc), markets=markets)
+        component = build_calendar_status(_RaisingCalendar(exc), markets=markets)
         assert expected in str(component)
 
     # 非日历异常同样不能把页面打崩，且要留下日志
-    with caplog.at_level(logging.ERROR, logger="web.pages.home"):
-        component = home.build_calendar_status(
+    with caplog.at_level(logging.ERROR, logger="web.calendar_status"):
+        component = build_calendar_status(
             _RaisingCalendar(RuntimeError("boom")), markets=markets
         )
     assert "交易日历不可用" in str(component)
@@ -152,7 +152,7 @@ def test_W8_calendar_status_shows_unavailable_instead_of_crashing(caplog):
 
 
 def test_W9_calendar_status_renders_trading_and_closed_days():
-    from web.pages import home
+    from web.calendar_status import build_calendar_status
 
     markets = (("HK", "港股"),)
 
@@ -167,13 +167,63 @@ def test_W9_calendar_status_renders_trading_and_closed_days():
         def is_trading_time(self, moment, market):
             return self.intraday
 
-    assert "盘中" in str(home.build_calendar_status(_Calendar(), markets=markets))
+    assert "盘中" in str(build_calendar_status(_Calendar(), markets=markets))
     assert "非盘中" in str(
-        home.build_calendar_status(_Calendar(intraday=False), markets=markets)
+        build_calendar_status(_Calendar(intraday=False), markets=markets)
     )
     assert "今日休市" in str(
-        home.build_calendar_status(_Calendar(session_type=None), markets=markets)
+        build_calendar_status(_Calendar(session_type=None), markets=markets)
     )
+
+
+def test_W10_runtime_status_renders_warm_refresh_and_realtime():
+    """监控页运行时快照：成功/失败/未运行都要有明确文案。"""
+    from web.calendar_status import build_runtime_status
+
+    empty = str(build_runtime_status({}))
+    assert "尚未执行" in empty
+    assert "未运行" in empty
+
+    snapshot = {
+        "warm": {
+            "HK": {"ok": True, "source": "cache", "error": None},
+            "US": {"ok": False, "source": None, "error": "futu 超时"},
+        },
+        "refresh": {"US": {"ok": True, "error": None, "note": "休市"}},
+        "realtime": {
+            "running": True,
+            "skipped_off_session": 7,
+            "last_tick_skipped": 2,
+            "stopped_reason": None,
+            "updated_at": "2026-11-16T10:00:00+08:00",
+        },
+        "checked_at": "2026-11-16T10:00:30+08:00",
+    }
+    text = str(build_runtime_status(snapshot))
+    assert "预热 成功（cache）" in text
+    assert "预热 失败：futu 超时" in text
+    assert "盘前刷新 成功（休市）" in text
+    assert "累计跳过休市标的 7" in text
+    assert "本轮跳过 2" in text
+    assert "2026-11-16T10:00:30+08:00" in text
+
+
+def test_W11_reloader_parent_does_not_start_calendar_runtime():
+    from web.calendar_runtime import should_start_runtime
+
+    assert should_start_runtime(True, {}) is False
+    assert should_start_runtime(True, {"WERKZEUG_RUN_MAIN": "true"}) is True
+    assert should_start_runtime(False, {}) is True
+
+
+def test_W12_runtime_without_realtime_sink_shows_not_running():
+    """P4 选 A：Web 没有实时 executor 时，监控明确显示未运行，不伪造计数。"""
+    from web.calendar_runtime import CalendarRuntime
+    from web.calendar_status import build_runtime_status
+
+    text = str(build_runtime_status(CalendarRuntime().snapshot()))
+    assert "未运行" in text
+    assert "累计跳过" not in text
 
 
 def test_W7_name_lookup_prefers_full_market_list(monkeypatch, tmp_path):

@@ -1,6 +1,8 @@
-"""R1/R2：实时循环的指标失败隔离与熔断（不依赖 pytest-asyncio）。"""
+"""R1/R2/P4：实时循环的指标失败隔离、熔断与交易日门控（不依赖 pytest-asyncio）。"""
 
 import asyncio
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import pytest
@@ -8,6 +10,7 @@ import pytest
 from indicators.base.errors import IndicatorCalculationError
 from strategy.strategy_executor import StrategyExecutor
 from strategy.technical_strategy import TechnicalStrategy
+from utils.trading_calendar import CalendarFutureUnavailable
 
 
 class _Recorder(TechnicalStrategy):
@@ -23,9 +26,37 @@ class _Recorder(TechnicalStrategy):
         return []
 
 
+class _Calendar:
+    """测试替身：默认全市场全天可交易。"""
+
+    def __init__(self, closed_markets=()):
+        self.closed_markets = set(closed_markets)
+
+    def is_trading_day(self, moment, market):
+        return True
+
+    def is_trading_time(self, moment, market):
+        return market not in self.closed_markets
+
+
+class _BrokenCalendar:
+    def __init__(self, exc):
+        self.exc = exc
+
+    def is_trading_day(self, moment, market):
+        raise self.exc
+
+    def is_trading_time(self, moment, market):
+        raise self.exc
+
+
 class _DataManager:
-    def __init__(self, symbols):
+    def __init__(self, symbols, calendar=None):
         self.symbols = list(symbols)
+        self._calendar = calendar or _Calendar()
+
+    def get_trading_calendar(self):
+        return self._calendar
 
     def get_realtime_data(self, data_type, symbol):
         if symbol not in self.symbols:
@@ -130,3 +161,120 @@ def test_R3_task_exception_is_recorded():
 
     asyncio.run(scenario())
     assert "装配失败" in (executor.realtime_stats["stopped_reason"] or "")
+
+
+# --------------------------------------------------------------------------- #
+# P4-3：交易日/时段门控
+# --------------------------------------------------------------------------- #
+def test_P4_gating_skips_closed_market_in_indicators_and_signals():
+    calc = _FakeCalculator(bad_symbols=set())
+    calc.cache[("US.AAPL", "sma_5")] = pd.Series([10.0])
+    calc.cache[("HK.00700", "sma_5")] = pd.Series([9.0])  # 陈旧值，不得进信号
+    executor = StrategyExecutor(calculator=calc)
+    strategy = _Recorder()
+    manager = _DataManager(
+        ["US.AAPL", "HK.00700"], calendar=_Calendar(closed_markets={"HK"})
+    )
+
+    failed = executor._realtime_tick(
+        manager,
+        ["US.AAPL", "HK.00700"],
+        {"s": strategy},
+        now=datetime(2026, 11, 16, 10, 0, tzinfo=ZoneInfo("America/New_York")),
+    )
+
+    assert failed == set()
+    assert strategy.seen == {"US.AAPL"}, "休市标的的旧指标被拿去出信号了"
+    assert executor.realtime_stats["skipped_off_session"] == 1
+    assert executor.realtime_stats["last_tick_skipped"] == 1
+
+
+def test_P4_calendar_future_unavailable_stops_realtime_loop():
+    executor = StrategyExecutor(calculator=_FakeCalculator(bad_symbols=set()))
+    executor._realtime_interval = 0
+    executor._realtime_running = True
+    manager = _DataManager(
+        ["US.AAPL"],
+        calendar=_BrokenCalendar(CalendarFutureUnavailable("尚未发布")),
+    )
+
+    asyncio.run(asyncio.wait_for(
+        executor._realtime_loop(manager, ["US.AAPL"], {"s": _Recorder()}),
+        timeout=5,
+    ))
+
+    assert executor.is_realtime_running() is False
+    assert "跨年日历未发布" in (executor.realtime_stats["stopped_reason"] or "")
+
+
+def test_P4_missing_calendar_fails_closed():
+    class _NoCalendarManager:
+        def get_realtime_data(self, data_type, symbol):
+            return pd.DataFrame()
+
+    executor = StrategyExecutor(calculator=_FakeCalculator(bad_symbols=set()))
+    executor._realtime_interval = 0
+    executor._realtime_running = True
+
+    asyncio.run(asyncio.wait_for(
+        executor._realtime_loop(_NoCalendarManager(), ["A"], {"s": _Recorder()}),
+        timeout=5,
+    ))
+
+    assert executor.is_realtime_running() is False
+    assert "交易日历不可用" in (executor.realtime_stats["stopped_reason"] or "")
+
+
+def test_P4_calendar_creation_exception_fails_closed():
+    class _BoomManager:
+        def get_trading_calendar(self):
+            raise RuntimeError("settings broken")
+
+    executor = StrategyExecutor(calculator=_FakeCalculator(bad_symbols=set()))
+    executor._realtime_interval = 0
+    executor._realtime_running = True
+
+    asyncio.run(asyncio.wait_for(
+        executor._realtime_loop(_BoomManager(), ["US.AAPL"], {"s": _Recorder()}),
+        timeout=5,
+    ))
+
+    assert executor.is_realtime_running() is False
+    reason = executor.realtime_stats["stopped_reason"] or ""
+    assert "交易日历不可用" in reason
+    assert "获取交易日历失败" in reason
+    assert "settings broken" in reason
+
+
+def test_P4_none_calendar_fails_closed():
+    class _NoneManager:
+        def get_trading_calendar(self):
+            return None
+
+    executor = StrategyExecutor(calculator=_FakeCalculator(bad_symbols=set()))
+    executor._realtime_interval = 0
+    executor._realtime_running = True
+
+    asyncio.run(asyncio.wait_for(
+        executor._realtime_loop(_NoneManager(), ["US.AAPL"], {"s": _Recorder()}),
+        timeout=5,
+    ))
+
+    assert executor.is_realtime_running() is False
+    assert "未初始化" in (executor.realtime_stats["stopped_reason"] or "")
+
+
+def test_P4_status_sink_receives_realtime_stats():
+    seen = []
+    executor = StrategyExecutor(
+        calculator=_FakeCalculator(bad_symbols=set()), status_sink=seen.append
+    )
+    executor.realtime_stats["skipped_off_session"] = 4
+    executor.realtime_stats["last_tick_skipped"] = 2
+
+    executor._publish_status()
+
+    assert seen[-1]["skipped_off_session"] == 4
+    assert seen[-1]["last_tick_skipped"] == 2
+    assert seen[-1]["running"] is False
+    assert seen[-1]["updated_at"]

@@ -3,88 +3,14 @@
 """
 
 import logging
-from datetime import datetime
-from typing import Any, Optional, Sequence, Tuple
+from typing import Optional
 
 import dash_bootstrap_components as dbc
 from dash import Input, Output, callback, html, no_update
 
-from utils.trading_calendar import CalendarError, CalendarFutureUnavailable
+from web.calendar_status import build_calendar_status
 
 logger = logging.getLogger(__name__)
-
-# 日历状态卡片覆盖的市场（展示名）
-CALENDAR_MARKETS: Tuple[Tuple[str, str], ...] = (
-    ("HK", "港股"),
-    ("US", "美股"),
-    ("CN", "A股"),
-)
-
-_SESSION_LABELS = {
-    "WHOLE": "全天",
-    "MORNING": "上午市",
-    "AFTERNOON": "下午市",
-}
-
-
-def _status_alert(label: str, message: str, color: str) -> dbc.Alert:
-    return dbc.Alert(f"{label}：{message}", color=color, className="py-2 mb-1")
-
-
-def build_calendar_status(
-    calendar: Any,
-    now: Optional[datetime] = None,
-    markets: Sequence[Tuple[str, str]] = CALENDAR_MARKETS,
-) -> html.Div:
-    """构造交易日历状态卡片内容。
-
-    calendar 可以是 ``DataManager.get_trading_calendar()`` 的返回值，也可以是
-    同契约的测试替身。四类日历异常都转成可见提示：页面不崩溃，也不静默降级。
-    """
-    if calendar is None:
-        return html.Div(
-            [_status_alert("交易日历", "尚未初始化（数据管理器不可用）", "warning")]
-        )
-
-    moment = now or datetime.now().astimezone()
-    items = []
-    for market, label in markets:
-        try:
-            session_type = calendar.get_session_type(moment, market)
-        except CalendarFutureUnavailable as exc:
-            items.append(_status_alert(label, f"跨年日历未发布：{exc}", "warning"))
-            continue
-        except CalendarError as exc:
-            items.append(_status_alert(label, f"交易日历不可用：{exc}", "danger"))
-            continue
-        except Exception:  # noqa: BLE001 - 状态卡片不允许把页面打崩
-            logger.exception("[%s] 交易日历状态检查失败", market)
-            items.append(_status_alert(label, "交易日历不可用：未知错误", "danger"))
-            continue
-
-        if session_type is None:
-            items.append(_status_alert(label, "今日休市", "secondary"))
-            continue
-
-        try:
-            intraday = calendar.is_trading_time(moment, market)
-        except CalendarError as exc:
-            items.append(_status_alert(label, f"交易日历不可用：{exc}", "danger"))
-            continue
-        except Exception:  # noqa: BLE001
-            logger.exception("[%s] 交易时段检查失败", market)
-            items.append(_status_alert(label, "交易日历不可用：未知错误", "danger"))
-            continue
-
-        session_label = _SESSION_LABELS.get(str(session_type), str(session_type))
-        items.append(
-            _status_alert(
-                label,
-                f"交易日（{session_label}）· {'盘中' if intraday else '非盘中'}",
-                "success" if intraday else "info",
-            )
-        )
-    return html.Div(items)
 
 
 def update_calendar_status(pathname: Optional[str]):

@@ -3,9 +3,16 @@
 策略运行状态、信号、持仓、日志等
 """
 
+import logging
+
 from dash import html, dcc, callback, Input, Output, State
 import dash_bootstrap_components as dbc
 from datetime import datetime
+
+from web.calendar_runtime import get_runtime
+from web.calendar_status import build_calendar_status, build_runtime_status
+
+logger = logging.getLogger(__name__)
 
 
 layout = html.Div([
@@ -100,6 +107,20 @@ layout = html.Div([
     dbc.Row([
         dbc.Col([
             dbc.Card([
+                dbc.CardHeader("交易日历"),
+                dbc.CardBody([
+                    html.Div(
+                        "正在检查交易日历...",
+                        id="monitor-calendar-status",
+                    ),
+                ])
+            ], className="mb-3")
+        ])
+    ]),
+
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
                 dbc.CardHeader("执行日志"),
                 dbc.CardBody([
                     html.Div(
@@ -114,6 +135,13 @@ layout = html.Div([
     dcc.Interval(
         id="monitor-interval",
         interval=2000,
+        n_intervals=0
+    ),
+
+    # 日历状态检查会读缓存，30 秒足够，避免与 2 秒监控轮询绑定
+    dcc.Interval(
+        id="calendar-status-interval",
+        interval=30000,
         n_intervals=0
     ),
 ])
@@ -154,3 +182,25 @@ def update_monitor(n):
         html.P("暂无行情", className="text-muted"),
         html.P("暂无日志", className="text-muted"),
     ]
+
+
+@callback(
+    Output("monitor-calendar-status", "children"),
+    Input("calendar-status-interval", "n_intervals"),
+)
+def update_monitor_calendar(n):
+    """更新交易日历状态与运行时快照（预热/刷新/实时循环）。"""
+    from web import app as web_app
+
+    calendar = None
+    if web_app.data_manager is not None:
+        try:
+            calendar = web_app.data_manager.get_trading_calendar()
+        except Exception:  # noqa: BLE001 - 日历不可用按提示展示
+            logger.exception("获取交易日历失败")
+
+    return html.Div([
+        build_calendar_status(calendar),
+        html.Hr(),
+        build_runtime_status(get_runtime().snapshot()),
+    ])

@@ -7,7 +7,8 @@
 
 import asyncio
 import logging
-from typing import Dict, List, Any, Optional
+from datetime import datetime
+from typing import Any, Callable, Dict, List, Optional
 import pandas as pd
 from indicators.base.calculator import IndicatorCalculator
 from indicators.base.errors import IndicatorCalculationError
@@ -17,6 +18,12 @@ from strategy.technical_strategy import TechnicalStrategy
 from strategy.indicator_spec import indicator_ids
 from strategy.indicator_assembly import ensure_indicators
 from strategy.multi_factor.multi_factor_strategy import MultiFactorStrategy
+from utils.trading_calendar import (
+    CalendarError,
+    CalendarFutureUnavailable,
+    CalendarUnavailable,
+    infer_market,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -37,12 +44,18 @@ class StrategyExecutor:
     - 实时模式：调用start_realtime_mode()启动，定时自动执行，数据从data_manager读取
     """
     
-    def __init__(self, calculator: IndicatorCalculator = None):
+    def __init__(
+        self,
+        calculator: IndicatorCalculator = None,
+        status_sink: Optional[Callable[[Dict[str, Any]], None]] = None,
+    ):
         """
         初始化策略执行协调器
         
         Args:
             calculator: 指标计算器实例，如果为None则创建新的
+            status_sink: 可选实时状态接收方（如 web.calendar_runtime.record_realtime），
+                每轮 tick 与停止时写入一次快照
         """
         # 指标计算器（负责指标计算和缓存）
         self.calculator = calculator or IndicatorCalculator()
@@ -65,12 +78,15 @@ class StrategyExecutor:
         self._realtime_running = False
         self._realtime_task = None
         self._realtime_interval = 2  # 默认2秒
+        self._status_sink = status_sink
         # 实时健康快照：供 monitor 页与告警消费
         self.realtime_stats = {
             'ticks': 0,
             'indicator_errors': 0,
             'last_error': None,
             'stopped_reason': None,
+            'skipped_off_session': 0,
+            'last_tick_skipped': 0,
         }
         self.max_consecutive_failures = 3
     
@@ -319,8 +335,60 @@ class StrategyExecutor:
             'indicator_errors': 0,
             'last_error': None,
             'stopped_reason': None,
+            'skipped_off_session': 0,
+            'last_tick_skipped': 0,
         })
-    
+
+    def _publish_status(self) -> None:
+        """把实时健康快照推给可选接收方（监控页）。"""
+        if self._status_sink is None:
+            return
+        try:
+            self._status_sink({
+                'running': self._realtime_running,
+                'skipped_off_session': self.realtime_stats.get('skipped_off_session', 0),
+                'last_tick_skipped': self.realtime_stats.get('last_tick_skipped', 0),
+                'stopped_reason': self.realtime_stats.get('stopped_reason'),
+                'updated_at': datetime.now().astimezone().isoformat(timespec='seconds'),
+            })
+        except Exception:  # noqa: BLE001 - 状态上报失败不能影响交易循环
+            logger.exception("实时状态上报失败")
+
+    def _active_symbols(self, data_manager, symbols: List[str], now: datetime):
+        """按标的市场过滤出当前可交易的 symbol。
+
+        日历缺失/不可用/无法推断市场一律抛 CalendarError（fail-closed），
+        由实时循环停止并记录原因，不静默跳过。
+        """
+        getter = getattr(data_manager, 'get_trading_calendar', None)
+        if not callable(getter):
+            raise CalendarUnavailable(
+                "data_manager 未提供 get_trading_calendar，无法判断交易时段"
+            )
+        try:
+            calendar = getter()
+        except CalendarError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - 统一转成显式日历不可用
+            raise CalendarUnavailable(f"获取交易日历失败: {exc}") from exc
+        if calendar is None:
+            raise CalendarUnavailable("交易日历未初始化")
+
+        market_open: Dict[str, bool] = {}
+        active: List[str] = []
+        skipped: List[str] = []
+        for symbol in symbols:
+            market = infer_market(symbol)
+            if market is None:
+                raise CalendarError(f"无法推断 {symbol} 的市场，无法判断交易时段")
+            if market not in market_open:
+                if calendar.is_trading_day(now, market):
+                    market_open[market] = calendar.is_trading_time(now, market)
+                else:
+                    market_open[market] = False
+            (active if market_open[market] else skipped).append(symbol)
+        return active, skipped
+
     def _on_realtime_task_done(self, task: asyncio.Task) -> None:
         """实时任务异常退出时留痕。
         
@@ -333,18 +401,26 @@ class StrategyExecutor:
         if exc is not None:
             self.realtime_stats['stopped_reason'] = f"实时任务异常退出: {exc!r}"
             logger.error("实时任务异常退出: %r", exc, exc_info=exc)
+            self._publish_status()
     
     def _realtime_tick(self,
                        data_manager,
                        symbols: List[str],
-                       strategies: Dict[str, BaseStrategy]) -> set:
+                       strategies: Dict[str, BaseStrategy],
+                       now: Optional[datetime] = None) -> set:
         """执行一轮实时评估，返回本轮指标计算失败的 symbol 集合。
 
         失败的 symbol 不得进入策略评估：calculator 里留着上一轮的旧值，
-        用它出信号比少算一只股票危险得多。
+        用它出信号比少算一只股票危险得多。休市标的同样不得进入指标与信号。
         """
         failed = set()
-        
+
+        # 按标的市场门控：休市/非交易时段跳过，日历异常 fail-closed 向上抛
+        moment = now or datetime.now().astimezone()
+        active, skipped = self._active_symbols(data_manager, symbols, moment)
+        self.realtime_stats['skipped_off_session'] += len(skipped)
+        self.realtime_stats['last_tick_skipped'] = len(skipped)
+
         # 装配期错误（声明的指标造不出来）不可自愈，直接冒泡让循环停下
         for strategy in strategies.values():
             if isinstance(strategy, TechnicalStrategy):
@@ -357,8 +433,8 @@ class StrategyExecutor:
         for strategy in strategies.values():
             all_indicators.update(self.get_required_indicators(strategy))
         
-        # 遍历所有股票
-        for symbol in symbols:
+        # 只遍历当前可交易的股票
+        for symbol in active:
             if not all_indicators:
                 break
             # 从data_manager获取该股票的实时K线数据
@@ -389,7 +465,7 @@ class StrategyExecutor:
                 required_indicators = self.get_required_indicators(strategy)
                 
                 for indicator_id in required_indicators:
-                    for symbol in symbols:
+                    for symbol in active:
                         if symbol in failed:
                             continue
                         indicator_df = self.calculator.get_indicator(
@@ -428,7 +504,22 @@ class StrategyExecutor:
         consecutive_failures = 0
         try:
             while self._realtime_running:
-                failed = self._realtime_tick(data_manager, symbols, strategies)
+                try:
+                    failed = self._realtime_tick(data_manager, symbols, strategies)
+                except CalendarFutureUnavailable as exc:
+                    self.realtime_stats['stopped_reason'] = (
+                        "跨年日历未发布，请次年 1 月 1 日后重试"
+                    )
+                    logger.error("%s: %s", self.realtime_stats['stopped_reason'], exc)
+                    break
+                except CalendarError as exc:
+                    self.realtime_stats['stopped_reason'] = (
+                        f"交易日历不可用，实时循环已停止: {exc}"
+                    )
+                    logger.error("%s", self.realtime_stats['stopped_reason'])
+                    break
+
+                self._publish_status()
                 
                 consecutive_failures = consecutive_failures + 1 if failed else 0
                 if consecutive_failures >= self.max_consecutive_failures:
@@ -450,6 +541,7 @@ class StrategyExecutor:
                 self.realtime_stats['stopped_reason'] = "循环退出"
             self._realtime_running = False
             self._realtime_task = None
+            self._publish_status()
             logger.info("实时模式已停止")
     
     def stop_realtime_mode(self):

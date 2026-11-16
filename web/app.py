@@ -269,8 +269,14 @@ def download_data(n_clicks, symbols, source, period, start_date, end_date):
     return html.Div(results)
 
 
-def init_data_sources(config=None):
-    """初始化数据源"""
+def init_data_sources(config=None, start_runtime: bool = True):
+    """初始化数据源
+
+    Args:
+        config: 数据配置
+        start_runtime: 是否启动交易日历后台线程（预热/盘前刷新）。
+            debug reloader 父进程应传 False，避免与子进程重复执行。
+    """
     global data_manager, data_state_manager
     from data.data_state_manager import DataStateManager
     from data.data_manager import DataManager
@@ -294,13 +300,23 @@ def init_data_sources(config=None):
     except Exception:
         logger.exception("FutuRTProcessor 连接失败，实时数据功能将不可用，但 Web 界面仍可使用")
 
+    if start_runtime:
+        try:
+            from web.calendar_runtime import get_runtime
+
+            get_runtime().start(data_manager)
+        except Exception:  # noqa: BLE001 - 后台任务失败不影响 Web 启动
+            logger.exception("交易日历后台任务启动失败，Web 界面仍可使用")
+
     logger.info("数据源初始化完成")
 
 
 def start_server(host='::', port=8050, debug=True):
     """启动服务器"""
     configure_logging()
-    init_data_sources()
+    from web.calendar_runtime import should_start_runtime
+
+    init_data_sources(start_runtime=should_start_runtime(debug))
 
     # Windows 默认对 IPv6 socket 启用 IPV6_V6ONLY，导致绑定 '::' 时仅监听
     # IPv6，IPv4 请求无法连接。此处 monkey-patch server_bind 以关闭该
