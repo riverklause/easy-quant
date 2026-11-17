@@ -15,3 +15,169 @@
 2026-11-13 12:06:29 - __main__ - INFO - 数据源初始化完成
 2026-11-13 12:06:29 - __main__ - INFO - 服务器启动中: http://[::]:8050 (IPv4/IPv6 双栈)
 2026-11-13 12:06:49 - Comm - WARNING - No such comm: 6fed2f97c1f44bd38d2a6ad6b7b3dff4
+2026-11-17 09:27:12 - __main__ - INFO - DataStateManager 初始化完成
+2026-11-17 09:27:12 - data.data_manager - INFO - 连接futu成功
+2026-11-17 09:27:12 - data.sources.futu_realtime - INFO - Futu API连接成功 (host=127.0.0.1, port=11111)
+2026-11-17 09:27:12 - data.data_manager - INFO - 连接futu_RT成功
+2026-11-17 09:27:12 - data.data_manager - INFO - 连接yfinance成功
+2026-11-17 09:27:12 - data.data_manager - INFO - 检查各客户端连接状态
+2026-11-17 09:27:12 - data.data_manager - INFO - futu: True
+2026-11-17 09:27:12 - data.data_manager - INFO - futu_RT: True
+2026-11-17 09:27:12 - data.data_manager - INFO - yfinance: True
+2026-11-17 09:27:12 - data.data_manager - INFO - 总体连接状态: True
+2026-11-17 09:27:12 - __main__ - INFO - DataManager 连接成功
+2026-11-17 09:27:12 - data.sources.futu_realtime - INFO - 数据回调函数已添加，当前回调数量: 1
+2026-11-17 09:27:12 - __main__ - INFO - FutuRTProcessor 回调注册成功
+2026-11-17 09:27:12 - __main__ - INFO - 数据源初始化完成
+2026-11-17 09:27:12 - __main__ - INFO - 服务器启动中: http://[::]:8050 (IPv4/IPv6 双栈)
+2026-11-17 09:27:12 - dash.dash - INFO - Dash is running on http://:::8050/
+
+2026-11-17 09:27:15 - __main__ - INFO - DataStateManager 初始化完成
+2026-11-17 09:27:15 - data.data_manager - INFO - 连接futu成功
+2026-11-17 09:27:15 - data.sources.futu_realtime - INFO - Futu API连接成功 (host=127.0.0.1, port=11111)
+2026-11-17 09:27:15 - data.data_manager - INFO - 连接futu_RT成功
+2026-11-17 09:27:15 - data.data_manager - INFO - 连接yfinance成功
+2026-11-17 09:27:15 - data.data_manager - INFO - 检查各客户端连接状态
+2026-11-17 09:27:15 - data.data_manager - INFO - futu: True
+2026-11-17 09:27:15 - data.data_manager - INFO - futu_RT: True
+2026-11-17 09:27:15 - data.data_manager - INFO - yfinance: True
+2026-11-17 09:27:15 - data.data_manager - INFO - 总体连接状态: True
+2026-11-17 09:27:15 - __main__ - INFO - DataManager 连接成功
+2026-11-17 09:27:15 - data.sources.futu_realtime - INFO - 数据回调函数已添加，当前回调数量: 1
+2026-11-17 09:27:15 - __main__ - INFO - FutuRTProcessor 回调注册成功
+2026-11-17 09:27:15 - web.calendar_runtime - INFO - 交易日历后台任务已启动: HK, US, CN
+2026-11-17 09:27:15 - __main__ - INFO - 数据源初始化完成
+2026-11-17 09:27:15 - __main__ - INFO - 服务器启动中: http://[::]:8050 (IPv4/IPv6 双栈)
+2026-11-17 09:27:17 - utils.trading_calendar - WARNING - 美股返回了 MORNING/AFTERNOON，按 WHOLE 处理
+2026-11-17 09:31:49 - __main__ - INFO - DataStateManager 初始化完成
+2026-11-17 09:31:49 - data.data_manager - INFO - 连接futu成功
+2026-11-17 09:31:49 - data.sources.futu_realtime - INFO - Futu API连接成功 (host=127.0.0.1, port=11111)
+2026-11-17 09:31:49 - data.data_manager - INFO - 连接futu_RT成功
+2026-11-17 09:31:49 - data.data_manager - INFO - 连接yfinance成功
+2026-11-17 09:31:49 - data.data_manager - INFO - 检查各客户端连接状态
+2026-11-17 09:31:49 - data.data_manager - INFO - futu: True
+2026-11-17 09:31:49 - data.data_manager - INFO - futu_RT: True
+2026-11-17 09:31:49 - data.data_manager - INFO - yfinance: True
+2026-11-17 09:31:49 - data.data_manager - INFO - 总体连接状态: True
+2026-11-17 09:31:49 - __main__ - INFO - DataManager 连接成功
+2026-11-17 09:31:49 - data.sources.futu_realtime - INFO - 数据回调函数已添加，当前回调数量: 1
+2026-11-17 09:31:49 - __main__ - INFO - FutuRTProcessor 回调注册成功
+2026-11-17 09:31:49 - __main__ - INFO - 数据源初始化完成
+2026-11-17 09:31:49 - __main__ - INFO - 服务器启动中: http://[::]:8050 (IPv4/IPv6 双栈)
+2026-11-17 09:31:49 - dash.dash - INFO - Dash is running on http://:::8050/
+
+2026-11-17 09:31:52 - __main__ - INFO - DataStateManager 初始化完成
+2026-11-17 09:31:52 - data.data_manager - INFO - 连接futu成功
+2026-11-17 09:31:52 - data.sources.futu_realtime - INFO - Futu API连接成功 (host=127.0.0.1, port=11111)
+2026-11-17 09:31:52 - data.data_manager - INFO - 连接futu_RT成功
+2026-11-17 09:31:52 - data.data_manager - INFO - 连接yfinance成功
+2026-11-17 09:31:52 - data.data_manager - INFO - 检查各客户端连接状态
+2026-11-17 09:31:52 - data.data_manager - INFO - futu: True
+2026-11-17 09:31:52 - data.data_manager - INFO - futu_RT: True
+2026-11-17 09:31:52 - data.data_manager - INFO - yfinance: True
+2026-11-17 09:31:52 - data.data_manager - INFO - 总体连接状态: True
+2026-11-17 09:31:52 - __main__ - INFO - DataManager 连接成功
+2026-11-17 09:31:52 - data.sources.futu_realtime - INFO - 数据回调函数已添加，当前回调数量: 1
+2026-11-17 09:31:52 - __main__ - INFO - FutuRTProcessor 回调注册成功
+2026-11-17 09:31:52 - web.calendar_runtime - INFO - 交易日历后台任务已启动: HK, US, CN
+2026-11-17 09:31:52 - __main__ - INFO - 数据源初始化完成
+2026-11-17 09:31:52 - __main__ - INFO - 服务器启动中: http://[::]:8050 (IPv4/IPv6 双栈)
+2026-11-17 09:33:48 - __main__ - INFO - DataStateManager 初始化完成
+2026-11-17 09:33:48 - data.data_manager - INFO - 连接futu成功
+2026-11-17 09:33:48 - data.sources.futu_realtime - INFO - Futu API连接成功 (host=127.0.0.1, port=11111)
+2026-11-17 09:33:48 - data.data_manager - INFO - 连接futu_RT成功
+2026-11-17 09:33:48 - data.data_manager - INFO - 连接yfinance成功
+2026-11-17 09:33:48 - data.data_manager - INFO - 检查各客户端连接状态
+2026-11-17 09:33:48 - data.data_manager - INFO - futu: True
+2026-11-17 09:33:48 - data.data_manager - INFO - futu_RT: True
+2026-11-17 09:33:48 - data.data_manager - INFO - yfinance: True
+2026-11-17 09:33:48 - data.data_manager - INFO - 总体连接状态: True
+2026-11-17 09:33:48 - __main__ - INFO - DataManager 连接成功
+2026-11-17 09:33:48 - data.sources.futu_realtime - INFO - 数据回调函数已添加，当前回调数量: 1
+2026-11-17 09:33:48 - __main__ - INFO - FutuRTProcessor 回调注册成功
+2026-11-17 09:33:48 - __main__ - INFO - 数据源初始化完成
+2026-11-17 09:33:48 - __main__ - INFO - 服务器启动中: http://[::]:8050 (IPv4/IPv6 双栈)
+2026-11-17 09:33:48 - dash.dash - INFO - Dash is running on http://:::8050/
+
+2026-11-17 09:33:51 - __main__ - INFO - DataStateManager 初始化完成
+2026-11-17 09:33:51 - data.data_manager - INFO - 连接futu成功
+2026-11-17 09:33:51 - data.sources.futu_realtime - INFO - Futu API连接成功 (host=127.0.0.1, port=11111)
+2026-11-17 09:33:51 - data.data_manager - INFO - 连接futu_RT成功
+2026-11-17 09:33:51 - data.data_manager - INFO - 连接yfinance成功
+2026-11-17 09:33:51 - data.data_manager - INFO - 检查各客户端连接状态
+2026-11-17 09:33:51 - data.data_manager - INFO - futu: True
+2026-11-17 09:33:51 - data.data_manager - INFO - futu_RT: True
+2026-11-17 09:33:51 - data.data_manager - INFO - yfinance: True
+2026-11-17 09:33:51 - data.data_manager - INFO - 总体连接状态: True
+2026-11-17 09:33:51 - __main__ - INFO - DataManager 连接成功
+2026-11-17 09:33:51 - data.sources.futu_realtime - INFO - 数据回调函数已添加，当前回调数量: 1
+2026-11-17 09:33:51 - __main__ - INFO - FutuRTProcessor 回调注册成功
+2026-11-17 09:33:51 - web.calendar_runtime - INFO - 交易日历后台任务已启动: HK, US, CN
+2026-11-17 09:33:51 - __main__ - INFO - 数据源初始化完成
+2026-11-17 09:33:51 - __main__ - INFO - 服务器启动中: http://[::]:8050 (IPv4/IPv6 双栈)
+2026-11-17 09:35:29 - __main__ - INFO - DataStateManager 初始化完成
+2026-11-17 09:35:29 - data.data_manager - INFO - 连接futu成功
+2026-11-17 09:35:29 - data.sources.futu_realtime - INFO - Futu API连接成功 (host=127.0.0.1, port=11111)
+2026-11-17 09:35:29 - data.data_manager - INFO - 连接futu_RT成功
+2026-11-17 09:35:29 - data.data_manager - INFO - 连接yfinance成功
+2026-11-17 09:35:29 - data.data_manager - INFO - 检查各客户端连接状态
+2026-11-17 09:35:29 - data.data_manager - INFO - futu: True
+2026-11-17 09:35:29 - data.data_manager - INFO - futu_RT: True
+2026-11-17 09:35:29 - data.data_manager - INFO - yfinance: True
+2026-11-17 09:35:29 - data.data_manager - INFO - 总体连接状态: True
+2026-11-17 09:35:29 - __main__ - INFO - DataManager 连接成功
+2026-11-17 09:35:29 - data.sources.futu_realtime - INFO - 数据回调函数已添加，当前回调数量: 1
+2026-11-17 09:35:29 - __main__ - INFO - FutuRTProcessor 回调注册成功
+2026-11-17 09:35:29 - __main__ - INFO - 数据源初始化完成
+2026-11-17 09:35:29 - __main__ - INFO - 服务器启动中: http://[::]:8050 (IPv4/IPv6 双栈)
+2026-11-17 09:35:29 - dash.dash - INFO - Dash is running on http://:::8050/
+
+2026-11-17 09:35:31 - __main__ - INFO - DataStateManager 初始化完成
+2026-11-17 09:35:31 - data.data_manager - INFO - 连接futu成功
+2026-11-17 09:35:31 - data.sources.futu_realtime - INFO - Futu API连接成功 (host=127.0.0.1, port=11111)
+2026-11-17 09:35:31 - data.data_manager - INFO - 连接futu_RT成功
+2026-11-17 09:35:31 - data.data_manager - INFO - 连接yfinance成功
+2026-11-17 09:35:31 - data.data_manager - INFO - 检查各客户端连接状态
+2026-11-17 09:35:31 - data.data_manager - INFO - futu: True
+2026-11-17 09:35:31 - data.data_manager - INFO - futu_RT: True
+2026-11-17 09:35:31 - data.data_manager - INFO - yfinance: True
+2026-11-17 09:35:31 - data.data_manager - INFO - 总体连接状态: True
+2026-11-17 09:35:31 - __main__ - INFO - DataManager 连接成功
+2026-11-17 09:35:31 - data.sources.futu_realtime - INFO - 数据回调函数已添加，当前回调数量: 1
+2026-11-17 09:35:31 - __main__ - INFO - FutuRTProcessor 回调注册成功
+2026-11-17 09:35:31 - web.calendar_runtime - INFO - 交易日历后台任务已启动: HK, US, CN
+2026-11-17 09:35:31 - __main__ - INFO - 数据源初始化完成
+2026-11-17 09:35:31 - __main__ - INFO - 服务器启动中: http://[::]:8050 (IPv4/IPv6 双栈)
+2026-11-17 11:06:14 - __main__ - INFO - DataStateManager 初始化完成
+2026-11-17 11:06:14 - data.data_manager - INFO - 连接futu成功
+2026-11-17 11:06:14 - data.sources.futu_realtime - INFO - Futu API连接成功 (host=127.0.0.1, port=11111)
+2026-11-17 11:06:14 - data.data_manager - INFO - 连接futu_RT成功
+2026-11-17 11:06:14 - data.data_manager - INFO - 连接yfinance成功
+2026-11-17 11:06:14 - data.data_manager - INFO - 检查各客户端连接状态
+2026-11-17 11:06:14 - data.data_manager - INFO - futu: True
+2026-11-17 11:06:14 - data.data_manager - INFO - futu_RT: True
+2026-11-17 11:06:14 - data.data_manager - INFO - yfinance: True
+2026-11-17 11:06:14 - data.data_manager - INFO - 总体连接状态: True
+2026-11-17 11:06:14 - __main__ - INFO - DataManager 连接成功
+2026-11-17 11:06:14 - data.sources.futu_realtime - INFO - 数据回调函数已添加，当前回调数量: 1
+2026-11-17 11:06:14 - __main__ - INFO - FutuRTProcessor 回调注册成功
+2026-11-17 11:06:14 - __main__ - INFO - 数据源初始化完成
+2026-11-17 11:06:14 - __main__ - INFO - 服务器启动中: http://[::]:8050 (IPv4/IPv6 双栈)
+2026-11-17 11:06:14 - dash.dash - INFO - Dash is running on http://:::8050/
+
+2026-11-17 11:06:17 - __main__ - INFO - DataStateManager 初始化完成
+2026-11-17 11:06:17 - data.data_manager - INFO - 连接futu成功
+2026-11-17 11:06:17 - data.sources.futu_realtime - INFO - Futu API连接成功 (host=127.0.0.1, port=11111)
+2026-11-17 11:06:17 - data.data_manager - INFO - 连接futu_RT成功
+2026-11-17 11:06:17 - data.data_manager - INFO - 连接yfinance成功
+2026-11-17 11:06:17 - data.data_manager - INFO - 检查各客户端连接状态
+2026-11-17 11:06:17 - data.data_manager - INFO - futu: True
+2026-11-17 11:06:17 - data.data_manager - INFO - futu_RT: True
+2026-11-17 11:06:17 - data.data_manager - INFO - yfinance: True
+2026-11-17 11:06:17 - data.data_manager - INFO - 总体连接状态: True
+2026-11-17 11:06:17 - __main__ - INFO - DataManager 连接成功
+2026-11-17 11:06:17 - data.sources.futu_realtime - INFO - 数据回调函数已添加，当前回调数量: 1
+2026-11-17 11:06:17 - __main__ - INFO - FutuRTProcessor 回调注册成功
+2026-11-17 11:06:17 - web.calendar_runtime - INFO - 交易日历后台任务已启动: HK, US, CN
+2026-11-17 11:06:17 - __main__ - INFO - 数据源初始化完成
+2026-11-17 11:06:17 - __main__ - INFO - 服务器启动中: http://[::]:8050 (IPv4/IPv6 双栈)
