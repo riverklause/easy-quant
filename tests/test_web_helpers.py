@@ -216,6 +216,20 @@ def test_W11_reloader_parent_does_not_start_calendar_runtime():
     assert should_start_runtime(False, {}) is True
 
 
+def test_W13_page_callbacks_registered_before_first_request():
+    """页面回调必须在 Dash 生成依赖前注册。
+
+    页面只在 display_page 里懒加载时，@callback 会错过首次请求的依赖表，
+    首页/监控页就会一直停在「正在检查交易日历...」。
+    """
+    import web.app as web_app
+
+    web_app.app._setup_server()
+    keys = set(web_app.app.callback_map)
+    assert "calendar-status-display.children" in keys
+    assert "monitor-calendar-status.children" in keys
+
+
 def test_W12_runtime_without_realtime_sink_shows_not_running():
     """P4 选 A：Web 没有实时 executor 时，监控明确显示未运行，不伪造计数。"""
     from web.calendar_runtime import CalendarRuntime

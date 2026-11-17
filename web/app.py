@@ -81,6 +81,21 @@ app.clientside_callback(
 )
 
 
+# ========== 页面预加载 ==========
+# Dash 4 在首次请求时才把 dash.callback 的全局注册合并进 app.callback_map。
+# 页面若只在 display_page 路由回调里懒加载，其 @callback 会错过依赖生成，
+# 前端始终停在初始占位（首页/监控页的日历卡片就会卡在“正在检查...”）。
+# 因此必须在模块导入期预加载所有带回调的页面。
+from web.pages import (  # noqa: E402,F401
+    control_strategy as _control_strategy_page,
+    home as _home_page,
+    indicators as _indicators_page,
+    monitor as _monitor_page,
+    performance as _performance_page,
+    screener as _screener_page,
+)
+
+
 # ========== 页面路由 ==========
 @app.callback(
     Output('page-content', 'children'),
