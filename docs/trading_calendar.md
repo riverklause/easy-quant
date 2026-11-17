@@ -1,7 +1,7 @@
 # 交易日历设计
 
-> 状态：P0–P4 已封版（能力层 + 接入 + 回测过滤 + 半天市/展示 + Web 预热/门控；CAL-01～35 测试）
-> 最后更新：2026-11-16
+> 状态：P0–P4 已完成（P4 按 A 口径；CAL-01～35 已覆盖，CAL-36 待 P4-B）
+> 最后更新：2026-11-17
 > 适用范围：港股（HK）、美股（US）、A 股（仅 SH/SZ，不含北交所）
 
 ## 1. 背景
@@ -405,8 +405,20 @@ OpenD 可用时，用下列日期查一次 `trade_date_type`：
 | CAL-33 | 盘前刷新：同一市场同一交易日最多 `refresh` 一次，失败不风暴重试 |
 | CAL-34 | 实时门控：休市标的跳过并计入 `skipped_off_session`，不计为指标失败；日历异常 fail-closed 且 `stopped_reason` 非空 |
 | CAL-35 | `/monitor` 日历状态：四类异常均有可见提示，预热/刷新结果可展示；实时任务未接入 `status_sink` 时明确显示「未运行」，不展示伪造的 off-session 计数 |
+| CAL-36 | （P4-B，待实现）Web 接入实时任务后，`/monitor` 展示真实 `skipped_off_session` / `last_tick_skipped`；休市标的不进入指标与策略；任务停止后回到「未运行」 |
 
 ## 13. 实施阶段
+
+### 当前进度（2026-11-17）
+
+| 阶段 | 状态 | 说明 |
+|---|---|---|
+| P0 能力层 | 已完成 | `TradingCalendar`、缓存/coverage、限流、异常、`is_trading_time` |
+| P1 数据层接入 | 已完成 | `DataManager`、`HistoricalDataFeed`、实时落盘 session date |
+| P2 回测过滤 | 已完成 | 逐标的剔除、计数、结果字段；MultiIndex / tz-aware 归一化 |
+| P3 半天市与展示 | 已完成 | US override、港股半日/美股提前收市/CN 午休、首页状态卡片 |
+| P4-A 预热/刷新/门控/监控 | 已完成 | `web/calendar_runtime.py`、启动预热、盘前刷新、实时门控、`/monitor` 状态；Web 页面回调预加载修复 |
+| P4-B Web 实时任务接入 | 未开始 | `/monitor` 目前只显示「实时任务 未运行」，不展示真实 off-session 计数 |
 
 ### P0：能力层，不改行为
 
@@ -449,6 +461,17 @@ OpenD 可用时，用下列日期查一次 `trade_date_type`：
 - **监控展示**：`/monitor` 复用共享组件，展示日历状态、预热/刷新结果；实时循环统计通过可选 `status_sink` 写入 `web/calendar_runtime.py`。当前 Web 进程没有实时 executor，未接入 sink 时明确显示「实时任务 未运行」，不伪造 off-session 计数。
 
 验收：重启 Web 不阻塞且单市场日历失败可见；盘前刷新每日一次；混合市场实时循环只跳过休市标的；日历异常停止原因非空；`/monitor` 在无实时任务时显示「未运行」。
+
+### P4-B：Web 实时任务接入（未开始，B 口径）
+
+P4-4 按 A 口径交付：Web 进程没有实时任务所有者，`/monitor` 明确显示「实时任务 未运行」，不展示伪造的 off-session 计数。B 口径作为后续独立任务：
+
+- 所有权二选一：
+  - Web 持有 `StrategyManager`，由它创建并启动 `StrategyExecutor`；
+  - 或提供进程级 executor 注册点（例如 `web/calendar_runtime.py` 暴露 `register_executor` / `unregister_executor`）。
+- 创建 executor 时传入 `status_sink=get_runtime().record_realtime`；实时循环每轮写入 `skipped_off_session`、`last_tick_skipped`、`stopped_reason`。
+- `/monitor` 在 `realtime.running=true` 时展示真实累计跳过数与最近一轮跳过数；未运行或未注册时仍显示「未运行」。
+- 验收（CAL-36）：启动实时任务后，休市标的只增加 `skipped_off_session`，不进入指标与策略；`/monitor` 显示值与 executor 快照一致；任务停止后回到「未运行」。
 
 ## 14. 运维约束
 
