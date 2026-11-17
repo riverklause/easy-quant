@@ -64,6 +64,13 @@
 - Web 控制台（Dash）已上线：关注列表、数据下载、指标图表、条件选股、绩效页
 - 实时监控面板为轮询实现（`dcc.Interval`）；`WebSocket` 尚无服务端
 
+**交易日历（横切能力）- 已完成 ✅**
+- 以富途 `request_trading_days` 为唯一权威来源，按市场（HK/US/CN）缓存
+- 回测按市场过滤非交易日 bar；真实数据路径日历不可用直接失败，不回工作日
+- 支持港股半日、美股提前收市 override、A 股午休与盘中时段判断
+- Web 首页/监控页展示日历状态；启动预热、盘前刷新、实时门控已接入
+- 设计文档：`docs/trading_calendar.md`（P0–P4 已完成；P4-B Web 实时任务接入待排期）
+
 ## 项目结构
 
 ```
@@ -153,6 +160,7 @@ easy-quant/
 ├── utils/                  # ✅ 工具模块
 │   ├── symbol_utils.py     # ✅ 股票代码工具
 │   ├── settings.py         # ✅ 配置管理
+│   ├── trading_calendar.py # ✅ 交易日历（futu 权威来源 + 缓存）
 │   └── data_utils.py       # 数据处理工具
 └── visualization/          # 可视化模块
 ```
@@ -419,10 +427,19 @@ python examples/demo_unified_strategy.py
 ### 🟡 第六阶段：可视化与监控（页面骨架可用，多数未接后端）
 
 - [x] 已接通数据的页面：关注列表（增删/下载）、指标图表、绩效页（依赖已有回测结果文件）
-- [ ] 实时监控面板：回调返回硬编码占位值，`DataStateManager` 目前只写不读
+- [ ] 实时监控面板：日历状态与预热/刷新结果已接；`DataStateManager` 仍只写不读，其余监控内容为占位
 - [ ] 条件选股页：按钮返回"选股功能开发中"，尚未接 `StockScreener`
 - [ ] 策略设置页：保存仅弹 Alert，不落状态
 - [ ] 实时推送：`WebSocket` 组件只是占位，服务端未接
+
+### ✅ 交易日历（横切能力，已完成）
+
+- [x] **权威日历**：`TradingCalendar` 走 futu `request_trading_days`，按市场缓存 + coverage 元数据
+- [x] **取数接入**：`DataManager` / `HistoricalDataFeed` 统一走日历；真实路径不可用直接失败
+- [x] **回测过滤**：按市场逐标的剔除非交易日 bar，结果记录 `calendar_source` / `calendar_dropped_bars`
+- [x] **半天市与 override**：`is_trading_time`、港股 `MORNING`、美股提前收市（`data/calendars/US/overrides.csv`）、A 股午休
+- [x] **Web 展示与运行时**：首页/监控页日历状态、启动预热、盘前刷新、实时循环 off-session 门控
+- [ ] **Web 实时任务接入**（P4-B）：`/monitor` 目前显示「实时任务 未运行」，不展示真实 off-session 计数
 
 ## 🎯 当前项目优势
 
@@ -438,6 +455,7 @@ python examples/demo_unified_strategy.py
 10. **基本面分析能力**：财务报表获取、财务指标计算、Altman Z-Score、杜邦分析
 11. **数据过期管理**：灵活的数据过期判断机制
 12. **契约驱动的测试**：`pytest tests -q`，以"改错必红"的回归灯为主，而非追求行覆盖率
+13. **交易所日历**：futu 权威日历、半天市/提前收市、回测过滤与实时门控
 
 ## 技术栈
 
@@ -507,8 +525,8 @@ MIT License
 ---
 
 **版本**: 0.1.0（以 `pyproject.toml` 为唯一来源）  
-**更新日期**: 2026-11-13  
-**项目状态**: 核心功能已完成 (数据获取 + 指标计算 + 策略引擎 + 条件过滤 + 回测引擎)
+**更新日期**: 2026-11-17  
+**项目状态**: 核心功能已完成 (数据获取 + 指标计算 + 策略引擎 + 条件过滤 + 回测引擎 + 交易日历)；Web 可视化部分完成
 
 ## 📊 实时模式使用说明
 
