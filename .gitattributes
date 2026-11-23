@@ -1,4 +1,4 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# 统一按 LF 检出：Windows 下避免 CRLF/LF 差异被当成「有改动」
+* text=auto eol=lf
 
 .githooks/* text eol=lf
